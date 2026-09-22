@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use WaBridge, please cite it as below."
+title: "WaBridge: free, open-source Android to iOS WhatsApp migration"
+type: software
+authors:
+  - family-names: Kumar
+    given-names: Parvesh
+license: GPL-3.0-or-later
+repository-code: "https://github.com/parveshkumar/wabridge"
+date-released: 2026-09-22

@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wabridge"
+version = "0.1.0a1"
+description = "Free, open-source Android -> iOS WhatsApp chat and media migration (no factory reset required)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Parvesh Kumar" }]
+keywords = ["whatsapp", "migration", "android", "ios", "backup", "transfer"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Topic :: Communications :: Chat",
+  "Topic :: System :: Archiving :: Backup",
+]
+dependencies = [
+  "cryptography>=41",
+]
+
+[project.optional-dependencies]
+# Talking to a real iPhone. Pure Python, works on Windows/macOS/Linux.
+ios = ["pymobiledevice3>=4.0"]
+# Optional fallback decryptor (GPL-3.0) if our built-in crypt15 reader hits an unknown header variant.
+wacrypt = ["wa-crypt-tools>=0.2"]
+dev = ["pytest>=7", "ruff>=0.4", "mypy>=1.8"]
+all = ["wabridge[ios,wacrypt,dev]"]
+
+[project.scripts]
+wabridge = "wabridge.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/parveshkumar/wabridge"
+Issues = "https://github.com/parveshkumar/wabridge/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501", "E402"]
