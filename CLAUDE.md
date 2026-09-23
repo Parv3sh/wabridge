@@ -1,8 +1,10 @@
 # WaBridge — working notes for AI assistants
 
-Read this first. It is the hand-off from the sessions that built the project (Sept 2026) and it
-records things that are not derivable from the code: what has been proven on real phones, what
-has not, and the traps already hit. Keep it current when you learn something new here.
+Read this first. It is the short hand-off from the sessions that built the project (Sept 2026):
+what has been proven on real phones, what has not, and the traps already hit. The full story —
+timeline, every failure and its fix, research findings, and a prioritised backlog with
+implementation notes — is in `docs/HANDOFF.md`; read that before starting non-trivial work.
+Keep both current when you learn something new here.
 
 ## What this is
 
@@ -43,7 +45,7 @@ build-app.sh           `bash build-app.sh dev` (Tauri dev, venv-wrapper sidecar)
 python -m unittest discover -s tests        # or pytest; must stay green
 ruff check src tests                        # line length 120; tests ignore E501/E402
 cd gui && npm run typecheck                 # tsc --noEmit
-bash build-app.sh dev                          # first-ever real Tauri build has NOT happened yet (see below)
+bash build-app.sh dev                       # compiled successfully on the owner's Mac on 2026-09-23
 ```
 
 ## Status: verified vs not (be honest in README/DESIGN when this changes)
@@ -60,9 +62,9 @@ NOT verified / open:
   Manifest.db had Mode 0o40755 / ProtectionClass 3; iOS writes 0o40775 / ProtectionClass 0; also
   removed a `Digest` field iOS never writes. Next candidates in DESIGN.md §7 item 1 (ZMETADATA blob,
   thumbnails). Do not claim media works until someone confirms on a device.
-- **Desktop app has never been built or run** — the sandbox that wrote it had no Rust/npm/PyInstaller.
-  Frontend type-checks with stubs; Python side of the protocol is tested. Expect small first-build
-  fixups (npm versions, tauri capability names, PyInstaller hidden imports).
+- **Desktop app compiles (2026-09-23) but is otherwise untested**: whether the window opens and the
+  engine boots was not confirmed at hand-off; it has never been used with phones; the production
+  build (`bash build-app.sh`, PyInstaller freeze) and the release workflow have never run.
 - Quotes/replies, reactions, edits, group events (skipped by default), WhatsApp Business (wired,
   untested), legacy pre-2022 Android schema (unsupported), iOS→Android (model layer is ready).
 
