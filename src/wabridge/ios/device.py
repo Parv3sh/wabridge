@@ -49,6 +49,14 @@ class IDevice:
     name: str
     ios_version: str
     will_encrypt: bool
+    disk_capacity: int | None = None    # bytes of user data partition
+    disk_available: int | None = None   # bytes free on the iPhone
+
+    @property
+    def disk_used(self) -> int | None:
+        if self.disk_capacity is None or self.disk_available is None:
+            return None
+        return max(0, self.disk_capacity - self.disk_available)
 
 
 async def _aw(value):
@@ -129,11 +137,20 @@ def info(udid: str | None = None) -> IDevice:
         svc = None
         try:
             svc = await _service(lockdown)
+            cap = avail = None
+            try:
+                du = await _aw(lockdown.get_value("com.apple.disk_usage")) or {}
+                cap = du.get("TotalDataCapacity")
+                avail = du.get("TotalDataAvailable")
+            except Exception:  # noqa: BLE001 — informational only
+                pass
             return IDevice(
                 udid=lockdown.udid,
                 name=await _aw(lockdown.get_value(key="DeviceName")) or "",
                 ios_version=await _aw(lockdown.get_value(key="ProductVersion")) or "",
                 will_encrypt=await _will_encrypt(svc, lockdown),
+                disk_capacity=int(cap) if cap else None,
+                disk_available=int(avail) if avail else None,
             )
         finally:
             if svc is not None:

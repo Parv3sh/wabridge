@@ -36,7 +36,7 @@ CHATSTORAGE = "ChatStorage.sqlite"
 FLAG_FILE = 1
 FLAG_DIR = 2
 MODE_FILE = 0o100644   # 33188
-MODE_DIR = 0o040755    # 16877
+MODE_DIR = 0o040775    # 16893 — what iOS itself writes for app-group directories
 
 
 class BackupError(Exception):
@@ -152,16 +152,19 @@ class Backup:
                 continue
         return best
 
-    def _template_blob(self, domain: str) -> bytes | None:
+    def _template_blob(self, domain: str, is_dir: bool = False) -> bytes | None:
+        """A real row of the same kind (file vs directory) to clone; iOS uses different
+        ProtectionClass/Mode for directories (0 / 0o40775) than for files (3 / 0o100644)."""
         row = self.conn.execute(
-            "SELECT file FROM Files WHERE domain=? AND flags=1 AND file IS NOT NULL LIMIT 1", (domain,)
+            "SELECT file FROM Files WHERE domain=? AND flags=? AND file IS NOT NULL LIMIT 1",
+            (domain, FLAG_DIR if is_dir else FLAG_FILE),
         ).fetchone()
         return row[0] if row else None
 
     def _make_blob(self, domain: str, relative_path: str, size: int, *, is_dir: bool,
                    mtime: int | None = None, digest: bytes | None = None) -> bytes:
         mtime = int(mtime or time.time())
-        template = self._template_blob(domain)
+        template = self._template_blob(domain, is_dir)
         inode = self._next_inode
         self._next_inode += 1
         if template:
@@ -170,7 +173,8 @@ class Backup:
                                        mtime, inode, digest)
             except Exception:
                 pass
-        return build_mbfile(relative_path, size, MODE_DIR if is_dir else MODE_FILE, mtime, inode, digest=digest)
+        return build_mbfile(relative_path, size, MODE_DIR if is_dir else MODE_FILE, mtime, inode,
+                            protection_class=0 if is_dir else 3, digest=digest)
 
     # ------------------------------------------------------------------ mutations
     def ensure_dir(self, domain: str, relative_path: str) -> None:
@@ -194,7 +198,7 @@ class Backup:
         dest = self.blob_path(fid)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         shutil.copyfile(local_file, dest)
-        digest = _sha1_file(dest)
+        digest = None   # iOS writes no Digest in unencrypted backups; mirror that
         existing = self.get(domain, relative_path)
         if existing and existing.blob:
             try:
@@ -333,6 +337,8 @@ def find_backup_dir(root: str) -> str:
     """pymobiledevice3 writes <root>/<UDID>/Manifest.db; accept either level."""
     if os.path.isfile(os.path.join(root, "Manifest.db")):
         return root
+    if not os.path.isdir(root):
+        raise BackupError("No iPhone backup has been taken yet.")
     subs = [os.path.join(root, d) for d in os.listdir(root) if os.path.isdir(os.path.join(root, d))]
     subs = [s for s in subs if os.path.isfile(os.path.join(s, "Manifest.db"))]
     if len(subs) == 1:

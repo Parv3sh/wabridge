@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "WaBridge main window: spawn the Python engine sidecar and open the log folder / project links.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "shell:allow-kill",
+    "shell:allow-stdin-write",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [{ "name": "binaries/wabridge-engine", "sidecar": true, "args": true }]
+    }
+  ]
+}

@@ -186,7 +186,7 @@ def make_ios_backup(root: str, chatstorage_src: str) -> str:
     # a pre-existing directory row and a WAL sibling, as real backups often have
     conn.execute("INSERT INTO Files VALUES (?,?,?,?,?)",
                  (file_id(WA_GROUP_DOMAIN, "Message"), WA_GROUP_DOMAIN, "Message", 2,
-                  build_mbfile("Message", 0, 0o040755, 1_700_000_000, 424243)))
+                  build_mbfile("Message", 0, 0o040775, 1_700_000_000, 424243, protection_class=0)))
     wal_fid = file_id(WA_GROUP_DOMAIN, CHATSTORAGE + "-wal")
     conn.execute("INSERT INTO Files VALUES (?,?,?,?,?)",
                  (wal_fid, WA_GROUP_DOMAIN, CHATSTORAGE + "-wal", 1,

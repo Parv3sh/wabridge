@@ -25,6 +25,7 @@ from collections.abc import Callable
 from .android import adb, crypt15, msgstore
 from .ios import backup as iosbackup
 from .ios import chatstorage, device
+from .reporting import emit_data, progress_callback
 
 log = logging.getLogger(__name__)
 Log = Callable[[str], None]
@@ -154,13 +155,7 @@ def ios_backup(work: Work, *, udid: str | None = None, out: Log = print) -> str:
     out("→ Backing up the iPhone (this can take a while; keep it unlocked and plugged in) …")
     out(f"  free disk space here: {free_bytes(work.root) / 1e9:.1f} GB "
         "(a full iPhone backup usually needs roughly the iPhone's used storage)")
-    last = [-1]
-
-    def prog(p: float) -> None:
-        pct = int(p)
-        if pct != last[0] and pct % 5 == 0:
-            last[0] = pct
-            out(f"  {pct}%")
+    prog = progress_callback(out, "ios_backup")
 
     # A previous (possibly already modified) backup must not be incrementally updated.
     prev = work.state.get("ios_backup", {}).get("folder")
@@ -212,7 +207,7 @@ def ios_rollback(work: Work, *, udid: str | None = None, system: bool = False, o
         raise PipelineError("No pristine backup recorded in this work directory")
     out(f"→ Restoring the PRISTINE backup ({pristine}) to the iPhone …")
     device.restore(os.path.dirname(pristine), udid=udid, system=system,
-                   progress=lambda p: out(f"  {int(p)}%") if int(p) % 10 == 0 else None)
+                   progress=progress_callback(out, "ios_rollback"))
     work.save(ios_rollback={"done": True})
 
 
@@ -228,6 +223,7 @@ def convert(work: Work, *, backup_folder: str | None = None, contacts_vcf: str |
                            skip_archived=skip_archived)
     st = archive.stats()
     out(f"  {st['chats']} chats ({st['groups']} groups), {st['messages']} messages, {st['media']} media")
+    emit_data(out, "archive_stats", st)
 
     # Always start from the untouched database so a re-run (e.g. the media pass after a
     # text-only pass) rebuilds everything instead of deduplicating against our own output.
@@ -254,6 +250,7 @@ def convert(work: Work, *, backup_folder: str | None = None, contacts_vcf: str |
         + media_note)
     with open(work.path("convert", "report.json"), "w", encoding="utf-8") as fh:
         json.dump(dataclasses.asdict(rep), fh, indent=2)
+    emit_data(out, "convert_report", {k: v for k, v in dataclasses.asdict(rep).items() if k != "media_jobs"})
     work.save(convert={"chatstorage": db, "backup_folder": folder, "domain": domain,
                        "messages": rep.messages_written, "media_jobs": len(rep.media_jobs)})
     return rep
@@ -276,11 +273,12 @@ def inject(work: Work, *, backup_folder: str | None = None, out: Log = print) ->
         for suffix in ("-wal", "-shm"):
             b.remove(domain, iosbackup.CHATSTORAGE + suffix)
         jobs = report.get("media_jobs", [])
+        prog = progress_callback(out, "inject")
         for i, job in enumerate(jobs, 1):
             b.put(domain, job["relative_path"], job["local_file"],
                   mtime=int(os.path.getmtime(job["local_file"])))
-            if i % 200 == 0 or i == len(jobs):
-                out(f"  media {i}/{len(jobs)}")
+            if i % 50 == 0 or i == len(jobs):
+                prog(100.0 * i / len(jobs))
         b.touch_status()
     out("  OK")
     work.save(inject={"backup_folder": folder, "media": len(report.get("media_jobs", []))})
@@ -290,15 +288,7 @@ def ios_restore(work: Work, *, udid: str | None = None, system: bool = False, ou
     root = work.backup_root
     out("→ Restoring the modified backup to the iPhone …")
     out("  The phone will reboot. Do NOT unplug it until it shows the lock screen again.")
-    last = [-1]
-
-    def prog(p: float) -> None:
-        pct = int(p)
-        if pct != last[0] and pct % 5 == 0:
-            last[0] = pct
-            out(f"  {pct}%")
-
-    device.restore(root, udid=udid, system=system, progress=prog)
+    device.restore(root, udid=udid, system=system, progress=progress_callback(out, "ios_restore"))
     out("  Restore command finished. Open WhatsApp on the iPhone once it has rebooted.")
     work.save(ios_restore={"done": True, "system": system})
 

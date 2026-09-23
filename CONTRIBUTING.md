@@ -33,6 +33,13 @@ Design rules that keep the project maintainable:
 4. **Fixtures over real data.** Add columns/rows to `tests/fixtures.py` when you need a new case.
 5. Mark anything you inferred rather than verified with `# unverified` and add it to DESIGN.md §7.
 
+## Desktop app
+
+`./build-app.sh dev` runs the Tauri app against the repo venv with hot reload (needs Rust and
+Node 20). Frontend type-check: `cd gui && npm run typecheck`. The engine protocol is the contract
+between `src/wabridge/serve.py` and `gui/src/types.ts` — change both together and extend
+`tests/test_serve.py`.
+
 ## Sharing schema knowledge safely
 
 If you discover a new column meaning or enum value, contribute it to DESIGN.md §4/§5 with the

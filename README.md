@@ -4,7 +4,7 @@
 
 The paid tools (Dr.Fone, MobileTrans, Mutsapper, Wazzap Migrator…) all do the same thing under the hood: decrypt the Android database, rewrite it into WhatsApp-for-iOS's `ChatStorage.sqlite`, slip it into an iPhone backup and restore that backup. Every one of those steps can be done with open-source software. WaBridge is that pipeline, automated, GPL-licensed, and free forever.
 
-> **Status: alpha, tested on real devices (Sept 2026: Samsung Galaxy Z Fold4 / Android → iPhone 13 / iOS 27.2).** Confirmed working on hardware: crypt15 decryption, parsing a 57k-message database, full iPhone backup, injection and restore through pymobiledevice3 11.x. The ChatStorage writer follows the conventions of the current WhatsApp iOS build (see DESIGN.md §5.2 and §7). **Always keep your Android backup.**
+> **Status: alpha — text migration works on real devices; media does not yet.** Tested 2026-09-22 on Samsung Galaxy Z Fold4 (Android) → iPhone 13 (iOS 27.2): all 57,816 messages across 192 chats and groups restored and open correctly in WhatsApp. Media (photos, videos, voice notes) imported as placeholders that didn't open in that test; a likely cause (directory permissions in the backup manifest) has since been fixed in code but **not yet re-tested on a device** — see DESIGN.md §7. If you run the media pass, please report the result in an issue. **Always keep your Android backup.**
 
 ## How it works
 
@@ -33,7 +33,15 @@ The official free path, Apple's *Move to iOS*, also works but requires a **facto
 * iPhone: WhatsApp installed and activated with the same number; **"Encrypt local backup" turned off**
 * Windows only: iTunes (or Apple Mobile Device Support) for the USB driver. Linux: `usbmuxd`. macOS: nothing extra.
 
-## Quick start (no setup knowledge needed)
+## Desktop app
+
+A guided app (Tauri + React shell around the same engine) lives in [`gui/`](gui/). It walks
+through the five steps, watches for both phones, shows progress, and only stops when a tap on a
+phone is needed. Build it with `./build-app.sh` (Rust + Node 20 required) or run it in dev mode
+with `./build-app.sh dev`; installers for macOS, Windows and Linux are produced by the release
+workflow on every `v*` tag. See [`gui/README.md`](gui/README.md).
+
+## Quick start in the terminal (no setup knowledge needed)
 
 Download/unzip, open a terminal in the folder, and run **one command**:
 
@@ -87,10 +95,14 @@ src/wabridge/
   ios/chatstorage.py    ChatStorage.sqlite writer (Core Data via plain SQL)
   ios/device.py         pymobiledevice3 wrapper (backup / restore / encryption)
   pipeline.py           resumable stages + `migrate`
-  wizard.py             guided interactive session (polls devices, resumes, logs)
+  wizard.py             guided interactive terminal session (polls devices, resumes, logs)
+  serve.py              JSON-lines engine for the desktop app (`wabridge serve`)
+  reporting.py          structured log/progress shared by CLI, wizard and GUI
   cli.py
-start.sh / start.bat    zero-setup launchers (uv + Python 3.12 + adb, no admin)
-tests/                  synthetic fixtures + 25 tests, no devices required
+gui/                    Tauri 2 + React desktop app (engine runs as a sidecar)
+start.sh / start.bat    zero-setup terminal launchers (uv + Python 3.12 + adb, no admin)
+build-app.sh            build or dev-run the desktop app
+tests/                  synthetic fixtures + 29 tests, no devices required
 DESIGN.md               architecture, schema mapping, risks, roadmap
 ```
 
@@ -98,13 +110,14 @@ Run the tests: `python -m unittest discover tests` (or `pytest`).
 
 ## Roadmap
 
-- [x] Engine: decrypt, parse, convert, inject (offline-tested)
-- [ ] **First successful real-device migration** (help wanted — see DESIGN.md §7 for the checklist)
+- [x] Engine: decrypt, parse, convert, inject
+- [x] **Text + group chats migrate on real devices** (verified 2026-09-22)
+- [ ] **Media files open on the iPhone** — bubbles render but files show as missing; help wanted (DESIGN.md §7 item 1)
 - [ ] Replies/quotes, reactions, edited messages
 - [ ] Group event messages (joined/left/subject changed)
 - [ ] WhatsApp Business
 - [ ] Legacy (pre-2022) Android schema
-- [ ] Desktop GUI (Tauri shell around this engine; ~10 MB installer)
+- [x] Desktop GUI (Tauri shell around this engine) — built, not yet run on hardware
 - [ ] iOS → Android (the model layer is already direction-agnostic)
 
 ## Prior art and thanks

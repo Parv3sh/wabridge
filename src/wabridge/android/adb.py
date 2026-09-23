@@ -48,7 +48,15 @@ class Device:
     model: str | None = None
 
 
+EXTRA_DIRS: list[str] = []      # e.g. a platform-tools folder the GUI downloaded
+
+
 def find_adb() -> str:
+    exe_name = "adb.exe" if os.name == "nt" else "adb"
+    for d in EXTRA_DIRS:
+        c = os.path.join(d, exe_name)
+        if os.path.isfile(c):
+            return c
     exe = shutil.which("adb")
     if exe:
         return exe
@@ -183,18 +191,53 @@ def pull_databases(dest: str, root: str, *, serial: str | None = None,
     return local
 
 
+def local_tree_bytes(path: str) -> int:
+    total = 0
+    for dirpath, _dirs, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(dirpath, f))
+            except OSError:
+                pass
+    return total
+
+
 def pull_media(dest: str, root: str, *, serial: str | None = None,
-               progress: Callable[[str], None] | None = None) -> list[str]:
+               progress: Callable[[str], None] | None = None,
+               percent: Callable[[float], None] | None = None) -> list[str]:
+    """Pull every media folder. `percent` (0..100) is derived from bytes landed locally versus
+    the remote folder size, because `adb pull` prints no progress when its output is a pipe."""
+    import threading
+
     media_local = os.path.join(dest, "Media")
     os.makedirs(media_local, exist_ok=True)
+    total_remote = dir_size_bytes(f"{root}/Media", serial) if percent else None
+    stop = threading.Event()
+
+    def poll() -> None:
+        while not stop.wait(1.0):
+            if total_remote:
+                pct = min(99.0, 100.0 * local_tree_bytes(media_local) / total_remote)
+                percent(pct)  # type: ignore[misc]
+
+    t = threading.Thread(target=poll, daemon=True) if percent else None
+    if t:
+        t.start()
     pulled = []
-    for d in MEDIA_DIRS:
-        remote = f"{root}/Media/{d}"
-        exists = shell(f'[ -d "{remote}" ] && echo yes', serial=serial, check=False).strip()
-        if exists != "yes":
-            continue
-        pull(remote, media_local, serial, progress)
-        pulled.append(d)
+    try:
+        for d in MEDIA_DIRS:
+            remote = f"{root}/Media/{d}"
+            exists = shell(f'[ -d "{remote}" ] && echo yes', serial=serial, check=False).strip()
+            if exists != "yes":
+                continue
+            pull(remote, media_local, serial, progress)
+            pulled.append(d)
+    finally:
+        stop.set()
+        if t:
+            t.join(timeout=2)
+    if percent:
+        percent(100.0)
     return pulled
 
 

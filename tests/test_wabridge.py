@@ -185,7 +185,8 @@ class ChatStorageWriterTests(unittest.TestCase):
         mi = conn.execute("SELECT * FROM ZWAMEDIAITEM WHERE Z_PK=?", (img["ZMEDIAITEM"],)).fetchone()
         self.assertEqual(mi["ZMESSAGE"], img["Z_PK"])
         self.assertEqual(mi["ZTITLE"], "look at this")
-        self.assertEqual(mi["ZVCARDSTRING"], "image/jpeg")
+        self.assertIsNone(mi["ZVCARDSTRING"])          # MIME must NOT go in the vCard column
+        self.assertEqual(img["ZMEDIASECTIONID"], "2024-09")
         self.assertTrue(mi["ZMEDIALOCALPATH"].endswith("-IMG-001.jpg"))
         self.assertTrue(mi["ZMEDIALOCALPATH"].startswith(f"Message/Media/{fixtures.ALICE}/"))
         voice = conn.execute("SELECT ZMESSAGETYPE FROM ZWAMESSAGE WHERE ZSTANZAID='K103'").fetchone()[0]
@@ -297,7 +298,7 @@ class BackupTests(unittest.TestCase):
                 de = b.get(iosbackup.WA_GROUP_DOMAIN, d)
                 self.assertIsNotNone(de, d)
                 self.assertEqual(de.flags, 2)
-                self.assertEqual(iosbackup.read_mbfile(de.blob)["Mode"], 0o040755)
+                self.assertEqual(iosbackup.read_mbfile(de.blob)["Mode"], 0o040775)
             self.assertEqual(b.conn.execute(
                 "SELECT COUNT(*) FROM Files WHERE relativePath='Message'").fetchone()[0], 1)
 
@@ -321,7 +322,7 @@ class BackupTests(unittest.TestCase):
         with iosbackup.Backup(self.root) as b:
             b.put(iosbackup.WA_GROUP_DOMAIN, "Message/Media/x/f.bin", media)
             m = iosbackup.read_mbfile(b.get(iosbackup.WA_GROUP_DOMAIN, "Message/Media/x/f.bin").blob)
-            self.assertEqual(m["Digest"], hashlib.sha1(b"data").digest())
+            self.assertNotIn("Digest", m)   # iOS writes none in unencrypted backups
 
     def test_encrypted_backup_refused(self):
         import plistlib

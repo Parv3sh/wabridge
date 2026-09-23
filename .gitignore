@@ -12,3 +12,4 @@ wabridge-work/
 *.crypt14
 msgstore*.db
 ChatStorage.sqlite*
+tools/

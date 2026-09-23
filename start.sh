@@ -52,6 +52,11 @@ fi
 say "Installing WaBridge …"
 uv pip install --python .venv/bin/python -q -e ".[ios]"
 
+if [ "${1:-}" = "--setup-only" ]; then
+  say "Setup complete (venv, adb, wabridge). Nothing launched."
+  exit 0
+fi
+
 # ---------------------------------------------------------------- go
 mkdir -p wabridge-work
 say "Starting the wizard. Log: $PWD/wabridge-work/wizard.log"

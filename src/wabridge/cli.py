@@ -6,6 +6,7 @@
     wabridge ios info | disable-encryption --password … | backup | restore [--system] | rollback
     wabridge convert [--contacts export.vcf]
     wabridge inject
+    wabridge serve --work <dir>          # JSON-lines engine for the desktop GUI
 """
 
 from __future__ import annotations
@@ -34,6 +35,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     wz = sub.add_parser("wizard", help="guided end-to-end migration; stops only when you must tap a phone")
     _add_work(wz)
+
+    sv = sub.add_parser("serve", help="JSON-lines engine on stdin/stdout (used by the desktop app)")
+    _add_work(sv)
 
     m = sub.add_parser("migrate", help="run every step end to end")
     _add_work(m)
@@ -132,6 +136,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.cmd == "doctor":
             return cmd_doctor()
+        if args.cmd == "serve":
+            from . import serve
+
+            return serve.main(getattr(args, "work", DEFAULT_WORK))
         work = pipeline.Work(getattr(args, "work", DEFAULT_WORK))
         if args.cmd == "wizard":
             from . import wizard

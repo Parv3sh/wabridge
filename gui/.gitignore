@@ -1,0 +1,7 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/schemas/
+# built sidecars are platform-specific artefacts; scripts/ recreate them
+src-tauri/binaries/wabridge-engine-*
+build/

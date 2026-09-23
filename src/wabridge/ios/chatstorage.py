@@ -155,8 +155,33 @@ class Writer:
         c["use_chat_properties"] = bool(self.conn.execute(
             "SELECT COUNT(*) FROM ZWACHATSESSION WHERE ZPROPERTIES IS NOT NULL").fetchone()[0]) \
             if self.has_table("ZWACHATPROPERTIES") else False
+        c["numeric_defaults"] = {t: self._never_null_numeric(t) for t in ("ZWAMEDIAITEM", "ZWAMESSAGE",
+                                                                             "ZWACHATSESSION", "ZWAGROUPMEMBER")
+                                 if self.has_table(t)}
         log.info("conventions learned from existing rows: %s", c)
         return c
+
+    def _never_null_numeric(self, table: str) -> dict[str, int | float]:
+        """Numeric columns that are non-null in every row WhatsApp wrote → Core Data treats them as
+        non-optional scalars, and a NULL there crashes the app on load. Default them to 0."""
+        info = self.conn.execute(f'PRAGMA table_info("{table}")').fetchall()
+        n = self.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        out: dict[str, int | float] = {}
+        for _cid, name, ctype, *_ in info:
+            if name.startswith("Z_") or not name.startswith("Z"):
+                continue
+            ct = (ctype or "").upper()
+            if not any(k in ct for k in ("INT", "FLOAT", "REAL", "DOUBLE", "TIMESTAMP")):
+                continue
+            if "TIMESTAMP" in ct or "DATE" in name:
+                continue                                    # dates may legitimately be NULL
+            if n == 0:
+                out[name] = 0.0 if any(k in ct for k in ("FLOAT", "REAL", "DOUBLE")) else 0
+                continue
+            nulls = self.conn.execute(f"SELECT COUNT(*) FROM {table} WHERE {name} IS NULL").fetchone()[0]
+            if nulls == 0:
+                out[name] = 0.0 if any(k in ct for k in ("FLOAT", "REAL", "DOUBLE")) else 0
+        return out
 
     # ------------------------------------------------------------------ core helpers
     def has_table(self, t: str) -> bool:
@@ -176,6 +201,9 @@ class Writer:
         for k, v in values.items():
             if k in cols:
                 row[k] = v
+        for k, default in getattr(self, "conv", {}).get("numeric_defaults", {}).get(table, {}).items():
+            if row.get(k) is None:
+                row[k] = default
         names = ", ".join(row)
         qs = ", ".join("?" for _ in row)
         self.conn.execute(f"INSERT INTO {table} ({names}) VALUES ({qs})", list(row.values()))
@@ -385,6 +413,7 @@ class Writer:
             "ZFROMJID": None if msg.from_me else chat.jid,
             "ZTOJID": chat.jid if msg.from_me else None,
             "ZSTANZAID": msg.key_id,
+            "ZMEDIASECTIONID": _media_section(msg.timestamp_ms) if is_media else None,
             "ZTEXT": text,
             "ZPUSHNAME": sender_name,
             "ZGROUPMEMBER": member_pk,
@@ -417,11 +446,12 @@ class Writer:
         if m is None:
             return None
         item.update({
-            "ZFILESIZE": m.size,
-            "ZMOVIEDURATION": m.duration_s,
-            "ZVCARDSTRING": m.mime_type,           # WhatsApp iOS stores the MIME type here
+            "ZFILESIZE": m.size or 0,
+            "ZMOVIEDURATION": int(m.duration_s or 0),
             "ZTITLE": m.file_name if msg.kind is MsgKind.DOCUMENT else m.caption,
         })
+        if m.width and m.height:
+            item["ZASPECTRATIO"] = m.width / m.height
         local = _locate_media(m.android_path, media_root) if (include_media and media_root) else None
         if local:
             # Prefix with a short hash of the Android path so `Images/IMG-1.jpg` and
@@ -462,6 +492,14 @@ def _media_index(media_root: str) -> dict[str, str]:
         for f in files:
             index.setdefault(f, os.path.join(dirpath, f))
     return index
+
+
+def _media_section(ts_ms: int) -> str:
+    """WhatsApp groups the media gallery by 'YYYY-MM' in ZMEDIASECTIONID."""
+    import datetime as _dt
+
+    d = _dt.datetime.fromtimestamp(ts_ms / 1000, tz=_dt.timezone.utc)
+    return f"{d.year}-{d.month:02d}"
 
 
 def _looks_like_base64_blob(value: str) -> bool:

@@ -143,6 +143,21 @@ Media files land at `Message/Media/<chatJID>/<x>/<y>/<hash8>-<filename>` in the 
 
 `Mobilebackup2Service.backup(full=True)` into `<work>/ios_backup/<UDID>/`; `restore(system=?, reboot=True, copy=False, settings=True, remove=False, source=UDID)`. `will_encrypt` gates the backup; `change_password(old, new="")` turns encryption off. Every call falls back to the `pymobiledevice3` CLI (`backup2 backup --full`, `backup2 restore --no-copy --settings --source …`) if the Python signature differs, because that API has moved between releases while the CLI has not.
 
+## 5.4 Desktop app (`gui/`)
+
+Tauri 2 shell (Rust ≈ 15 lines: shell and opener plugins) + React/TypeScript frontend.
+The Python engine runs as a Tauri *sidecar* — a PyInstaller-frozen `wabridge` binary named
+`binaries/wabridge-<target-triple>` — started once per session as `wabridge serve --work
+<appdata>/work`. Frontend and engine speak JSON lines over stdin/stdout (`serve.py` documents the
+protocol; `gui/src/types.ts` mirrors it). Every command is one request with a correlation id;
+long actions stream `log`/`progress`/`data` events before a terminal `result`/`error`. The engine
+serialises heavy actions (`busy` otherwise), never probes the iPhone while an iPhone action runs,
+maps every failure to a stable `code` with a user-facing hint, and refuses to echo secrets. The
+frontend derives the current step from the engine's `state` so a half-finished migration resumes
+after a restart, and polls `devices` every 3 s only on screens that need a phone. In development
+the sidecar is a two-line shell wrapper around the repo venv (`gui/scripts/dev-sidecar.sh`), so
+Python edits need no rebuild. Design decisions are in `gui/DESIGN.md`.
+
 ## 6. Security and privacy
 
 Everything runs locally; there is no network code in the engine. The 64-digit key is accepted on the command line (visible in shell history); `--key` also accepts a path to a file containing it, and the GUI will use a masked field. The work directory contains the entire decrypted chat history; `.gitignore` excludes it, and the user guide says to delete it when done. We never modify the Android phone.
@@ -152,7 +167,7 @@ Everything runs locally; there is no network code in the engine. The 64-digit ke
 The test-suite proves the engine is internally consistent against synthetic databases shaped like the real ones. The following can only be proven on hardware, roughly in order of risk:
 
 0. ~~Restore of a modified backup~~ **Verified 2026-09-22**: pymobiledevice3 11.16 `restore(system=False, source=udid)` restores the modified app-group data on iOS 27.2 (Find My must be off; MBErrorDomain/211 otherwise). WhatsApp opened our ChatStorage.sqlite — the first attempt failed on content conventions (see §5.2), not on the restore mechanism.
-1. **Restore accepts our Manifest.db rows for new media files.** watoi/mwatoi only ever *replaced* ChatStorage.sqlite in place; only the non-free MobitrixWATransfer is known to add rows. If the device rejects the backup, first retry with media rows omitted (`convert --no-media`) to isolate the cause, then compare a device-produced media row's MBFile plist against ours (`read_mbfile`).
+1. **Media files are not found by WhatsApp after restore (open, 2026-09-22).** With the numeric-default fixes the database loads and media bubbles render, but tapping them does nothing. **Most likely cause, fixed in code but UNTESTED on a device:** our injected directory rows had `Mode 0o40755` / `ProtectionClass 3`, while every directory iOS itself writes has `Mode 0o40775` / `ProtectionClass 0`; files also carried a `Digest` iOS never writes. `Backup._make_blob` now clones a real *directory* row for directories and omits `Digest`. If iOS was skipping our folders on restore, that alone explains unreachable files. Next tester: run the media pass once and report. Remaining candidates if that isn't it: (a) verify the injected `Message/Media/...` blobs actually landed in the app-group container — restore may skip Manifest rows whose parent directory rows or `ProtectionClass` differ from what iOS wrote; (b) every real `ZWAMEDIAITEM` has a small `ZMETADATA` protobuf blob (3 bytes `c0 0d 01` on system rows) that ours lack; (c) `ZTHUMBNAILLOCALPATH`/`ZXMPPTHUMBPATH` and a thumbnail file may be required for the bubble to become tappable; (d) `ZCLOUDSTATUS` semantics. Diagnostic: take a fresh backup *after* a native photo is received on the iPhone and diff that row + its Manifest entry against ours. **Restore accepts our Manifest.db rows for new media files.** watoi/mwatoi only ever *replaced* ChatStorage.sqlite in place; only the non-free MobitrixWATransfer is known to add rows. If the device rejects the backup, first retry with media rows omitted (`convert --no-media`) to isolate the cause, then compare a device-produced media row's MBFile plist against ours (`read_mbfile`).
 2. **`restore(system=…)`.** pymobiledevice3 issue #1053 reports app-group data only restoring with `--system` and an explicit `--source` on some iOS versions. Default is off; the guide tells users to retry with `--system`.
 3. **`ZMESSAGESTATUS` values** (8/6) and whether WhatsApp needs `ZFLAGS` bits for outgoing messages to render ticks correctly.
 4. **`ZMESSAGETYPE 14` for revoked** and whether `ZGROUPEVENTTYPE` mappings are worth importing system messages (currently skipped).
@@ -166,7 +181,7 @@ Each item, once verified, should move into §5 with the WhatsApp/iOS version it 
 
 ## 8. Roadmap
 
-**0.1 (now)** engine + tests + docs. **0.2** first confirmed real-device migration; fix everything §7 turns up; publish to PyPI. **0.3** quotes/replies (`ZWAMESSAGEINFO` / `ZPARENTMESSAGE`), reactions (`message_add_on_reaction`), edits, group events; `--key-file`; JSON-lines progress output for the GUI. **0.4** Tauri GUI wizard with PyInstaller sidecar; signed macOS/Windows builds via CI. **0.5** WhatsApp Business; legacy Android schema via compatibility views. **1.0** iOS → Android.
+**0.1 (now)** engine + tests + docs. **0.2** first confirmed real-device migration; fix everything §7 turns up; publish to PyPI. **0.3** quotes/replies (`ZWAMESSAGEINFO` / `ZPARENTMESSAGE`), reactions (`message_add_on_reaction`), edits, group events; `--key-file`; JSON-lines progress output for the GUI. **0.4** ~~Tauri GUI wizard with PyInstaller sidecar~~ (built in 0.2; first on-device run pending); signed macOS/Windows builds via CI. **0.5** WhatsApp Business; legacy Android schema via compatibility views. **1.0** iOS → Android.
 
 ## 9. References
 
