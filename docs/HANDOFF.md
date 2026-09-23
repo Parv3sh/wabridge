@@ -313,7 +313,10 @@ before investigating 2–4.
    has a smoke test but is unrun). Unsigned builds: macOS users need Open Anyway or `xattr`;
    signing/notarisation later via `bundle.macOS.signingIdentity` and `APPLE_*` secrets.
    Low-severity leftovers from the day-3 review: `shutdown` is honoured mid-restore when the
-   window closes (consider refusing while a heavy action holds the lock, and a close confirmation);
+   window closes (consider refusing while a heavy action holds the lock, and a close confirmation) —
+   and quitting the app with ⌘Q skips even that: the sidecar is killed outright (engine.log shows no
+   "stopping" line, seen when the owner quit after the backup on day 3), so a quit mid-restore would
+   cut the restore off. A Tauri `CloseRequested` handler that asks while an action runs is the fix;
    `wadecrypt_fallback` passes the key on the command line; the Windows-only `usbmuxd` story.
 3. **Quoted replies**: Android `message_quoted.key_id` is already parsed into
    `Message.quoted_key_id`. On iOS set `ZWAMESSAGE.ZPARENTMESSAGE` to the Z_PK of the message with
