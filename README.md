@@ -41,8 +41,30 @@ through the five steps, watches for both phones, shows progress, and only stops 
 phone is needed. Build it with `bash build-app.sh` (Rust + Node 20 required) or run it in dev mode
 with `bash build-app.sh dev`; installers for macOS, Windows and Linux are produced by the release
 workflow on every `v*` tag. Status: it builds, opens and boots the engine on macOS (23 Sept 2026),
-but has not yet been used with phones — the terminal wizard is the path verified end to end.
+and its Android and iPhone steps have run with real phones (23 Sept 2026); the final restore
+step through the app has not yet — the terminal wizard is the path verified end to end.
 See [`gui/README.md`](gui/README.md).
+
+### What it looks like
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/img/start.png" alt="Start screen: three readiness checks and a Begin button" width="100%"></td>
+    <td width="50%"><img src="docs/img/android-key.png" alt="Android screen: phone detected, 64-digit key field, folded instructions" width="100%"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/img/android-fetched.png" alt="Android screen after decrypting: chat, group, message and media counts" width="100%"></td>
+    <td><img src="docs/img/iphone-backup.png" alt="iPhone screen while the backup runs, progress in the rail and the bar" width="100%"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/img/transfer.png" alt="Transfer screen: Find My iPhone warning and confirmation before moving the chats" width="100%"></td>
+    <td><img src="docs/img/done.png" alt="Done screen: turn Find My back on, grant Contacts access, delete WaBridge's copies" width="100%"></td>
+  </tr>
+</table>
+
+Rendered from the app's built-in mock engine (`cd gui && npm run screenshots`), so the phone
+names, chat names and counts are invented; the layout and copy are the real app. A dark-scheme
+version follows the system setting ([example](docs/img/start-dark.png)).
 
 ## Quick start in the terminal (no setup knowledge needed)
 

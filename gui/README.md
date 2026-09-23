@@ -60,9 +60,19 @@ npx playwright install chromium     # once; Playwright itself is a devDependency
 npm run screenshots                 # → gui/screenshots/NN-scene.png (+ .full.png for tall screens)
 ```
 
-35 scenes cover every state of every step in light and dark schemes and at the minimum window
+36 scenes cover every state of every step in light and dark schemes and at the minimum window
 size. Look at the PNGs after any change to a screen or to `styles.css`; they are how the design was
 reviewed, since the real window cannot be captured from an unattended session.
+
+The README's gallery is a hand-picked subset downscaled to 1× in `docs/img/`. After a visible
+change, refresh it (macOS):
+
+```bash
+for s in 02-start:start 10-android-key:android-key 14-android-fetched:android-fetched \
+         21-iphone-backup-progress:iphone-backup 23-transfer-options:transfer 28-done:done 31-start-dark:start-dark; do
+  sips -Z 980 "screenshots/${s%%:*}.png" --out "../docs/img/${s##*:}.png" >/dev/null
+done
+```
 
 ## Build installers
 
