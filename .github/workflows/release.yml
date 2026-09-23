@@ -60,7 +60,7 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then
             pwsh gui/scripts/build-sidecar.ps1
           else
-            gui/scripts/build-sidecar.sh ${{ matrix.triple }}
+            sh gui/scripts/build-sidecar.sh ${{ matrix.triple }}
           fi
 
       - name: Frontend dependencies

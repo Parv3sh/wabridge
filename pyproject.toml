@@ -37,8 +37,8 @@ all = ["wabridge[ios,wacrypt,dev]"]
 wabridge = "wabridge.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/parveshkumar/wabridge"
-Issues = "https://github.com/parveshkumar/wabridge/issues"
+Homepage = "https://github.com/parvesh-rm/wabridge"
+Issues = "https://github.com/parvesh-rm/wabridge/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

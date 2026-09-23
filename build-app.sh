@@ -14,11 +14,11 @@ cd gui
 say "Installing frontend dependencies …"
 npm install --no-fund --no-audit
 if [ "$MODE" = "dev" ]; then
-  ./scripts/dev-sidecar.sh
+  sh ./scripts/dev-sidecar.sh
   say "Starting WaBridge in dev mode (hot reload) …"
   exec npm run tauri dev
 fi
-./scripts/build-sidecar.sh
+sh ./scripts/build-sidecar.sh
 say "Building the app …"
 npm run tauri build
 say "Done. Installers are in gui/src-tauri/target/release/bundle/:"

@@ -8,7 +8,7 @@ has not, and the traps already hit. Keep it current when you learn something new
 
 Free, GPL-3 desktop tool that moves WhatsApp history from an Android phone to an iPhone that is
 already set up (Apple's official path needs a factory reset). Owner: Parvesh Kumar
-(GitHub `parveshkumar`; he wants proper attribution — name in pyproject, LICENSE, CITATION.cff).
+(GitHub `parvesh-rm`; he wants proper attribution — name in pyproject, LICENSE, CITATION.cff).
 
 How it works: decrypt the Android `msgstore.db.crypt15` with the user's 64-digit key → parse →
 write into WhatsApp-for-iOS `ChatStorage.sqlite` inside an unencrypted iPhone backup → restore
@@ -33,7 +33,7 @@ src/wabridge/
 gui/                   Tauri 2 + React/TS desktop app; engine runs as sidecar. See gui/README.md, gui/DESIGN.md
 tests/                 29 tests, all offline with synthetic fixtures + fake phones (tests/fixtures.py, test_wizard.py FakePhones)
 start.sh / start.bat   zero-setup terminal launcher (uv → Python 3.12 → adb → editable install → wizard). `--setup-only` skips launch
-build-app.sh           `./build-app.sh dev` (Tauri dev, venv-wrapper sidecar) | `./build-app.sh` (PyInstaller freeze + tauri build)
+build-app.sh           `bash build-app.sh dev` (Tauri dev, venv-wrapper sidecar) | `bash build-app.sh` (PyInstaller freeze + tauri build)
 .github/workflows/     ci.yml (pytest + ruff on 3 OSes), release.yml (tauri-action installers on v* tags)
 ```
 
@@ -43,7 +43,7 @@ build-app.sh           `./build-app.sh dev` (Tauri dev, venv-wrapper sidecar) | 
 python -m unittest discover -s tests        # or pytest; must stay green
 ruff check src tests                        # line length 120; tests ignore E501/E402
 cd gui && npm run typecheck                 # tsc --noEmit
-./build-app.sh dev                          # first-ever real Tauri build has NOT happened yet (see below)
+bash build-app.sh dev                          # first-ever real Tauri build has NOT happened yet (see below)
 ```
 
 ## Status: verified vs not (be honest in README/DESIGN when this changes)
@@ -115,8 +115,8 @@ Tauri/GUI gotchas already handled:
 
 ## Immediate next steps
 
-1. `git rm -r --cached tools -q && ./build-app.sh dev` on the owner's Mac; fix whatever the first
-   Tauri/npm/PyInstaller build surfaces; then `./build-app.sh` for a .dmg and try a `v0.2.0` tag for release.yml.
+1. `bash build-app.sh dev` on the owner's Mac (tools/ is already untracked); fix whatever the first
+   Tauri/npm/PyInstaller build surfaces; then `bash build-app.sh` for a .dmg and try a `v0.2.0` tag for release.yml.
 2. README checklist: quotes/replies (`ZPARENTMESSAGE`), reactions (`message_add_on_reaction`), edits,
    group events, WhatsApp Business, legacy schema; PyPI publish.
 3. Media, only when the owner is willing to restore again: receive one photo natively on the iPhone,

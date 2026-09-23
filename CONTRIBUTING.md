@@ -17,7 +17,7 @@ Never post `msgstore.db`, `ChatStorage.sqlite`, your 64-digit key or any backup 
 ## Code
 
 ```bash
-git clone https://github.com/parveshkumar/wabridge && cd wabridge
+git clone https://github.com/parvesh-rm/wabridge && cd wabridge
 python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -e ".[all]"
 pytest -q && ruff check src tests
@@ -35,7 +35,7 @@ Design rules that keep the project maintainable:
 
 ## Desktop app
 
-`./build-app.sh dev` runs the Tauri app against the repo venv with hot reload (needs Rust and
+`bash build-app.sh dev` runs the Tauri app against the repo venv with hot reload (needs Rust and
 Node 20). Frontend type-check: `cd gui && npm run typecheck`. The engine protocol is the contract
 between `src/wabridge/serve.py` and `gui/src/types.ts` — change both together and extend
 `tests/test_serve.py`.

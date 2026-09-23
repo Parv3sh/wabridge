@@ -37,8 +37,8 @@ The official free path, Apple's *Move to iOS*, also works but requires a **facto
 
 A guided app (Tauri + React shell around the same engine) lives in [`gui/`](gui/). It walks
 through the five steps, watches for both phones, shows progress, and only stops when a tap on a
-phone is needed. Build it with `./build-app.sh` (Rust + Node 20 required) or run it in dev mode
-with `./build-app.sh dev`; installers for macOS, Windows and Linux are produced by the release
+phone is needed. Build it with `bash build-app.sh` (Rust + Node 20 required) or run it in dev mode
+with `bash build-app.sh dev`; installers for macOS, Windows and Linux are produced by the release
 workflow on every `v*` tag. See [`gui/README.md`](gui/README.md).
 
 ## Quick start in the terminal (no setup knowledge needed)

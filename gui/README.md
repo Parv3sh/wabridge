@@ -22,7 +22,7 @@ From the repo root, one command (installs npm packages, points the sidecar at th
 starts Tauri with hot reload):
 
 ```bash
-./build-app.sh dev
+bash build-app.sh dev
 ```
 
 Python changes take effect on the next app launch; frontend changes reload instantly.
@@ -30,12 +30,12 @@ Python changes take effect on the next app launch; frontend changes reload insta
 ## Build installers
 
 ```bash
-./build-app.sh
+bash build-app.sh
 # → gui/src-tauri/target/release/bundle/dmg/WaBridge_0.1.0_aarch64.dmg   (macOS)
 #   …/bundle/msi/  …/bundle/nsis/   (Windows)   …/bundle/deb/  …/bundle/appimage/ (Linux)
 ```
 
-Prerequisites: Rust (`rustup`), Node 20+, and the Python venv (`./start.sh --setup-only` creates
+Prerequisites: Rust (`rustup`), Node 20+, and the Python venv (`bash start.sh --setup-only` creates
 it). Windows additionally needs iTunes or Apple Mobile Device Support for the iPhone USB driver.
 
 Size: the Tauri shell itself is a few MB; the frozen Python engine (pymobiledevice3 and its

@@ -4,7 +4,7 @@ import { formatBytes, useApp } from "../store";
 import type { EngineError } from "../types";
 import { Button, ErrorNotice, Notice, Steps } from "../components/ui";
 
-const REPO_URL = "https://github.com/parveshkumar/wabridge";
+const REPO_URL = "https://github.com/parvesh-rm/wabridge";
 
 export function DoneStep({ mediaPending, onMediaPass, onRestart }: { mediaPending: boolean; onMediaPass: () => void; onRestart: () => void }) {
   const { run, activity, state } = useApp();

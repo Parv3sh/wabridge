@@ -4,7 +4,7 @@ import { formatCount, useApp } from "../store";
 import type { ConvertResult, EngineError } from "../types";
 import { Button, Check, Choice, ErrorNotice, Notice, ProgressBar, Steps } from "../components/ui";
 
-const ISSUES_URL = "https://github.com/parveshkumar/wabridge/issues/new";
+const ISSUES_URL = "https://github.com/parvesh-rm/wabridge/issues/new";
 
 type Phase = "options" | "running" | "verify" | "failed";
 
