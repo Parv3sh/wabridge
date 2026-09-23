@@ -163,20 +163,34 @@ def ios_backup(work: Work, *, udid: str | None = None, out: Log = print) -> str:
         shutil.rmtree(prev)
     folder = device.backup(work.backup_root, udid=udid, progress=prog)
 
-    # Keep the FIRST backup of this phone untouched forever: it is the rollback point.
-    pristine = os.path.join(work.path("ios_backup_pristine"), os.path.basename(folder))
-    if os.path.isdir(pristine):
-        out(f"  keeping existing pristine copy at {pristine}")
-    else:
-        _clone_tree(folder, pristine)
-        out(f"  pristine copy saved to {pristine}")
-
+    # Check for WhatsApp BEFORE making the pristine copy: a copy taken while WhatsApp was not yet
+    # installed can never be converted from, and it would otherwise be kept forever below.
+    domain = _domain(work)
     with iosbackup.Backup(folder) as b:
-        if not b.has_whatsapp(_domain(work)):
+        if not b.has_whatsapp(domain):
             raise PipelineError(
                 "WhatsApp data is not in this backup. Install WhatsApp on the iPhone, register the SAME "
                 "phone number, send one message to anyone, then run `wabridge ios backup` again."
             )
+
+    # Keep the FIRST backup of this phone untouched forever: it is the rollback point.
+    pristine = os.path.join(work.path("ios_backup_pristine"), os.path.basename(folder))
+    if os.path.isdir(pristine):
+        usable = os.path.isfile(os.path.join(pristine, "Manifest.db"))
+        if usable:
+            with iosbackup.Backup(pristine) as pb:
+                usable = pb.has_whatsapp(domain)
+        if usable:
+            out(f"  keeping existing pristine copy at {pristine}")
+        else:
+            # Left behind by an interrupted copy or by a build that copied before checking for WhatsApp.
+            shutil.rmtree(pristine, ignore_errors=True)
+            _clone_tree(folder, pristine)
+            out(f"  replaced an unusable pristine copy at {pristine}")
+    else:
+        _clone_tree(folder, pristine)
+        out(f"  pristine copy saved to {pristine}")
+
     out(f"  OK → {folder}")
     work.save(ios_backup={"folder": folder, "pristine": pristine})
     return folder
@@ -193,7 +207,15 @@ def _clone_tree(src: str, dst: str) -> None:
         if r.returncode == 0:
             return
         shutil.rmtree(dst, ignore_errors=True)
-    shutil.copytree(src, dst)
+    try:
+        shutil.copytree(src, dst)
+    except OSError as e:
+        # Never leave a half-copied pristine behind: a later run would trust it as the rollback point.
+        shutil.rmtree(dst, ignore_errors=True)
+        raise PipelineError(
+            f"Could not make the pristine copy of the backup ({e.strerror or e}). On this file system the copy "
+            "needs as much free space again as the backup itself; free up space or move the work folder."
+        ) from e
 
 
 def free_bytes(path: str) -> int:
@@ -267,7 +289,7 @@ def inject(work: Work, *, backup_folder: str | None = None, out: Log = print) ->
     with open(rp, encoding="utf-8") as fh:
         report = json.load(fh)
     db = work.path("convert", "ChatStorage.sqlite")
-    out("→ Injecting ChatStorage.sqlite and media into the backup …")
+    out("→ Adding the chats (and any media) to the iPhone backup …")
     with iosbackup.Backup(folder) as b:     # rolls back Manifest.db if anything below raises
         b.put(domain, iosbackup.CHATSTORAGE, db)
         for suffix in ("-wal", "-shm"):

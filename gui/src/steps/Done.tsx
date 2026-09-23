@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { asEngineError, openExternal } from "../engine";
 import { formatBytes, useApp } from "../store";
 import type { EngineError } from "../types";
@@ -23,6 +24,15 @@ export function DoneStep({ mediaPending, onMediaPass, onRestart }: { mediaPendin
     }
   };
 
+  const showFolder = async () => {
+    if (!state?.work) return;
+    try {
+      await revealItemInDir(state.work);
+    } catch {
+      /* browser preview, or a platform without a file manager hook: the console shows the path */
+    }
+  };
+
   return (
     <article className="screen">
       <h1>Your chats are on the iPhone</h1>
@@ -39,7 +49,7 @@ export function DoneStep({ mediaPending, onMediaPass, onRestart }: { mediaPendin
         ]}
       />
 
-      {mediaPending && (
+      {mediaPending && cleaned === null && (
         <Notice tone="info" title="Photos and videos are still on this computer">
           <p>You copied media from the Android phone but transferred chats only. You can run the media pass now; it repeats the transfer with media attached. This part is experimental.</p>
           <div className="actions actions-tight">
@@ -53,28 +63,34 @@ export function DoneStep({ mediaPending, onMediaPass, onRestart }: { mediaPendin
       <h2>Your data on this computer</h2>
       {cleaned === null ? (
         <>
-          <p>
-            WaBridge kept a decrypted copy of your chats, the media and two iPhone backups in its data folder
-            {state ? ` (${state.work})` : ""}. Delete them once you are happy with the iPhone.
-          </p>
+          <p>WaBridge kept a decrypted copy of your chats, the media and two iPhone backups on this computer. Delete them once you are happy with the iPhone.</p>
           {err && <ErrorNotice error={err} />}
+          {confirm && (
+            <p>
+              This deletes WaBridge’s copies from this computer: the decrypted chats, the media and both iPhone backups. After that WaBridge can no longer put the iPhone back to how it was. Your chats stay on both phones.
+            </p>
+          )}
           <div className="actions">
             {confirm ? (
               <>
                 <Button kind="danger" onClick={clean} busy={activity?.cmd === "clean"}>
-                  Yes, delete everything
+                  Delete WaBridge’s copies
                 </Button>
                 <Button kind="quiet" onClick={() => setConfirm(false)}>
-                  Keep it for now
+                  Keep them for now
                 </Button>
               </>
             ) : (
-              <Button kind="secondary" onClick={() => setConfirm(true)}>
-                Delete my data
-              </Button>
+              <>
+                <Button kind="secondary" onClick={() => setConfirm(true)}>
+                  Delete my data
+                </Button>
+                <Button kind="quiet" onClick={() => void showFolder()} disabled={!state?.work}>
+                  Show the folder
+                </Button>
+              </>
             )}
           </div>
-          {confirm && <p className="aside">This also deletes the untouched iPhone backup, so “put the iPhone back” will no longer be possible from WaBridge.</p>}
         </>
       ) : (
         <Notice tone="ok" title={`Deleted ${formatBytes(cleaned)}`} />
@@ -89,6 +105,8 @@ export function DoneStep({ mediaPending, onMediaPass, onRestart }: { mediaPendin
         <Button kind="quiet" onClick={() => void openExternal(REPO_URL)}>
           WaBridge on GitHub
         </Button>
+      </div>
+      <div className="actions actions-sticky">
         <Button kind="quiet" onClick={onRestart} disabled={!!activity}>
           Start another migration
         </Button>

@@ -14,6 +14,7 @@
   --flare-wash: rgba(196, 64, 44, 0.09);
   --warn-wash: rgba(240, 180, 41, 0.16);
   --ok-wash: rgba(15, 127, 138, 0.1);
+  --sodium-edge: #9a6b00; /* ink ring that lifts a sodium lamp to 3:1 on light washes */
 
   --font: "Avenir Next", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-display: "Avenir Next", "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -38,8 +39,9 @@
     --harbour-wash: rgba(63, 178, 188, 0.14);
     --flare: #e0684f;
     --flare-wash: rgba(224, 104, 79, 0.14);
-    --warn-wash: rgba(240, 180, 41, 0.14);
+    --warn-wash: rgba(240, 180, 41, 0.07); /* stronger reads olive-brown on the dark deck */
     --ok-wash: rgba(63, 178, 188, 0.14);
+    --sodium-edge: transparent;
   }
 }
 
@@ -137,11 +139,32 @@ b {
   grid-area: content;
   overflow-y: auto;
   background: var(--deck);
+  scrollbar-gutter: stable;
+}
+
+/* WKWebView hides overlay scrollbars until the pane moves; a visible thumb is the only hint that
+   a screen continues below the fold. */
+.content::-webkit-scrollbar {
+  width: 10px;
+}
+
+.content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.content::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  border-radius: 5px;
+  border: 2px solid var(--deck);
+}
+
+.content::-webkit-scrollbar-thumb:hover {
+  background: var(--rivet);
 }
 
 .screen {
   max-width: 62ch;
-  padding: 40px 44px 56px;
+  padding: 40px 44px 24px;
 }
 
 .screen-boot {
@@ -301,10 +324,6 @@ p {
   font-size: 13.5px;
 }
 
-.warn-text {
-  color: var(--flare);
-}
-
 .mono {
   font-family: var(--mono);
   font-size: 13px;
@@ -341,6 +360,38 @@ p {
   display: grid;
   place-items: center;
   font-variant-numeric: tabular-nums;
+}
+
+/* Instructions the user may not need (how to get the key, how to install WhatsApp) fold away so
+   the field or button they came for is the first thing on the screen. */
+.steps-disclosure {
+  margin: 22px 0 0;
+}
+
+.steps-disclosure summary {
+  color: var(--harbour-ink);
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.steps-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.steps-disclosure summary::before {
+  content: "›";
+  display: inline-block;
+  width: 16px;
+  transition: transform 0.15s ease;
+}
+
+.steps-disclosure[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.steps-disclosure[open] summary {
+  margin-bottom: 10px;
 }
 
 /* ---------------------------------------------------------------- berth */
@@ -414,9 +465,13 @@ p {
   background: var(--harbour);
 }
 
-.lamp-warn,
-.lamp-info {
+.lamp-warn {
   background: var(--sodium);
+  box-shadow: inset 0 0 0 1.5px var(--sodium-edge);
+}
+
+.lamp-info {
+  background: var(--harbour);
 }
 
 .lamp-error {
@@ -492,10 +547,18 @@ p {
 
 .check-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   padding: 12px 0;
   border-bottom: 1px solid var(--rule);
+}
+
+.check-row .lamp {
+  margin-top: 6px;
+}
+
+.check-row .btn {
+  align-self: center;
 }
 
 .check-text {
@@ -513,7 +576,7 @@ p {
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
   gap: 12px;
   margin: 6px 0 20px;
 }
@@ -522,7 +585,7 @@ p {
   display: flex;
   flex-direction: column;
   padding: 12px 0;
-  border-top: 2px solid var(--harbour);
+  border-top: 1px solid var(--rule);
 }
 
 .stat-value {
@@ -571,17 +634,21 @@ p {
 }
 
 .chatlist-count {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
   color: var(--rivet);
   font-variant-numeric: tabular-nums;
   flex: none;
 }
 
 .tag {
-  font-size: 11.5px;
-  color: var(--harbour-ink);
-  background: var(--harbour-wash);
+  font-size: 13px;
+  color: var(--rivet);
+  background: transparent;
+  border: 1px solid var(--rule);
   border-radius: 4px;
-  padding: 1px 6px;
+  padding: 0 6px;
   flex: none;
 }
 
@@ -622,14 +689,27 @@ p {
   letter-spacing: 0.02em;
 }
 
-.input:focus {
-  border-color: var(--harbour);
-  outline: 2px solid var(--harbour-wash);
-  outline-offset: 0;
+.input::placeholder {
+  color: var(--rivet);
+  opacity: 1;
 }
 
-.input-invalid {
+.input:focus {
+  border-color: var(--harbour);
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--harbour);
+  outline-offset: 1px;
+}
+
+.input-invalid,
+.input-invalid:focus {
   border-color: var(--flare);
+}
+
+.input-invalid:focus-visible {
+  outline-color: var(--flare);
 }
 
 .field-hint {
@@ -665,8 +745,17 @@ p {
 }
 
 .choice-disabled {
-  opacity: 0.55;
   cursor: not-allowed;
+  border-style: dashed;
+}
+
+.choice-disabled .choice-label,
+.choice-disabled .choice-detail {
+  color: var(--rivet);
+}
+
+.choice-disabled input {
+  opacity: 0.5;
 }
 
 .choice-item input {
@@ -707,9 +796,27 @@ p {
   white-space: nowrap;
 }
 
+/* "blocked" and "working" must look different: a disabled button goes grey, a busy one keeps
+   its full colour and shows the spinner (Button sets aria-busy). */
 .btn:disabled {
-  opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn-primary:disabled:not([aria-busy="true"]),
+.btn-danger:disabled:not([aria-busy="true"]) {
+  background: var(--rule);
+  color: var(--rivet);
+}
+
+.btn-secondary:disabled:not([aria-busy="true"]),
+.btn-quiet:disabled:not([aria-busy="true"]) {
+  background: transparent;
+  border-color: var(--rule);
+  color: var(--rivet);
+}
+
+.btn[aria-busy="true"] {
+  cursor: progress;
 }
 
 .btn-primary {
@@ -763,6 +870,18 @@ p {
 
 .actions-wrap {
   flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+/* The forward action of a long screen stays reachable while the rest scrolls underneath. */
+.actions-sticky {
+  position: sticky;
+  bottom: 0;
+  margin: 22px -44px 0;
+  padding: 14px 44px 18px;
+  background: var(--deck);
+  border-top: 1px solid var(--rule);
+  z-index: 1;
 }
 
 .spinner {
@@ -906,10 +1025,20 @@ p {
   }
 
   .screen {
-    padding: 32px 28px 48px;
+    padding: 32px 28px 24px;
   }
 
-  .stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .actions-sticky {
+    margin: 22px -28px 0;
+    padding: 14px 28px 18px;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  /* white on the lighter dark-mode harbour is ~2.5:1; fog ink is ~6.9:1 */
+  .btn-primary,
+  .btn-danger,
+  .btn-primary:not(:disabled):hover {
+    color: var(--fog);
   }
 }

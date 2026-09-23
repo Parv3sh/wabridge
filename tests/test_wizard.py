@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 sys.path.insert(0, os.path.dirname(__file__))
 
 import fixtures  # noqa: E402
+
 from wabridge import pipeline, wizard  # noqa: E402
 from wabridge.android import adb, crypt15  # noqa: E402
 from wabridge.ios import device  # noqa: E402

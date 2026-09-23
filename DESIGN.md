@@ -41,7 +41,7 @@ The alternative free route, Apple's *Move to iOS* + WhatsApp's official transfer
 
 **Why a CLI before a GUI.** A migration either works or destroys trust. The GUI adds nothing until the engine has succeeded on real devices; a CLI is also what testers can paste logs from.
 
-**Why Tauri for the GUI later.** ~10 MB installer versus 150 MB+ for Electron, and Tauri's sidecar mechanism is built for exactly this: bundle a PyInstaller-frozen `wabridge` binary, spawn it with `--json`, render progress. Electron would work equally well if contributors prefer it; the engine boundary is the same either way.
+**Why Tauri for the GUI later.** ~10 MB installer versus 150 MB+ for Electron, and Tauri's sidecar mechanism is built for exactly this: bundle a PyInstaller-frozen engine as the sidecar, spawn it as `wabridge serve` (JSON lines over stdin/stdout), render progress. Electron would work equally well if contributors prefer it; the engine boundary is the same either way.
 
 ### 3.1 Intermediate model (`model.py`)
 
@@ -103,7 +103,7 @@ CREATE TABLE Files (fileID TEXT PRIMARY KEY, domain TEXT, relativePath TEXT, fla
 -- blob on disk at <backup>/<fileID[:2]>/<fileID>
 ```
 
-`Files.file` is an NSKeyedArchiver plist of an `MBFile`: `Size, Mode (0o100644 / 0o040755), InodeNumber, LastModified, LastStatusChange, Birth, ProtectionClass, UserID/GroupID (501), Flags, RelativePath` (+ `EncryptionKey` only in encrypted backups). To add a file we clone the blob of an existing WhatsApp row and rewrite those fields, so whatever this iOS version emits is preserved; if no template exists we build the archive from scratch (`build_mbfile`). Parent directories get `flags=2` rows. `Manifest.plist`/`Status.plist` dates are refreshed. Encrypted backups are refused with an actionable message; supporting them would mean re-implementing the keybag unwrap and re-encrypting every injected file, which is real work for no benefit when the user can untick one box.
+`Files.file` is an NSKeyedArchiver plist of an `MBFile`: `Size, Mode (0o100644 files / 0o040775 directories, as iOS itself writes — see §7), InodeNumber, LastModified, LastStatusChange, Birth, ProtectionClass, UserID/GroupID (501), Flags, RelativePath` (+ `EncryptionKey` only in encrypted backups). To add a file we clone the blob of an existing WhatsApp row and rewrite those fields, so whatever this iOS version emits is preserved; if no template exists we build the archive from scratch (`build_mbfile`). Parent directories get `flags=2` rows. `Manifest.plist`/`Status.plist` dates are refreshed. Encrypted backups are refused with an actionable message; supporting them would mean re-implementing the keybag unwrap and re-encrypting every injected file, which is real work for no benefit when the user can untick one box.
 
 Known fileID sanity check: `sha1("AppDomainGroup-group.net.whatsapp.WhatsApp.shared-ChatStorage.sqlite") = 7c7fba66…f01d`.
 
@@ -146,9 +146,10 @@ Media files land at `Message/Media/<chatJID>/<x>/<y>/<hash8>-<filename>` in the 
 ## 5.4 Desktop app (`gui/`)
 
 Tauri 2 shell (Rust ≈ 15 lines: shell and opener plugins) + React/TypeScript frontend.
-The Python engine runs as a Tauri *sidecar* — a PyInstaller-frozen `wabridge` binary named
-`binaries/wabridge-<target-triple>` — started once per session as `wabridge serve --work
-<appdata>/work`. Frontend and engine speak JSON lines over stdin/stdout (`serve.py` documents the
+The Python engine runs as a Tauri *sidecar* — a PyInstaller-frozen binary named
+`binaries/wabridge-engine-<target-triple>` (it must not be called `wabridge`: on case-insensitive
+file systems that collides with the `WaBridge` app binary) — started once per session as
+`wabridge-engine serve --work <appdata>/work`. Frontend and engine speak JSON lines over stdin/stdout (`serve.py` documents the
 protocol; `gui/src/types.ts` mirrors it). Every command is one request with a correlation id;
 long actions stream `log`/`progress`/`data` events before a terminal `result`/`error`. The engine
 serialises heavy actions (`busy` otherwise), never probes the iPhone while an iPhone action runs,
@@ -160,7 +161,9 @@ Python edits need no rebuild. Design decisions are in `gui/DESIGN.md`.
 
 ## 6. Security and privacy
 
-Everything runs locally; there is no network code in the engine. The 64-digit key is accepted on the command line (visible in shell history); `--key` also accepts a path to a file containing it, and the GUI will use a masked field. The work directory contains the entire decrypted chat history; `.gitignore` excludes it, and the user guide says to delete it when done. We never modify the Android phone.
+Everything runs locally. The engine's only network access is the optional download of Google's
+Android platform-tools from `dl.google.com` when the user clicks "Install Android tools" in the
+desktop app (`serve.py`, `adb.install`); nothing about the user or the phones is ever sent anywhere. The 64-digit key is accepted on the command line (visible in shell history); `--key` also accepts a path to a file containing it, and the GUI will use a masked field. The work directory contains the entire decrypted chat history; `.gitignore` excludes it, and the user guide says to delete it when done. We never modify the Android phone.
 
 ## 7. What is *not* yet verified — the on-device checklist
 
@@ -181,7 +184,7 @@ Each item, once verified, should move into §5 with the WhatsApp/iOS version it 
 
 ## 8. Roadmap
 
-**0.1 (now)** engine + tests + docs. **0.2** first confirmed real-device migration; fix everything §7 turns up; publish to PyPI. **0.3** quotes/replies (`ZWAMESSAGEINFO` / `ZPARENTMESSAGE`), reactions (`message_add_on_reaction`), edits, group events; `--key-file`; JSON-lines progress output for the GUI. **0.4** ~~Tauri GUI wizard with PyInstaller sidecar~~ (built in 0.2; first on-device run pending); signed macOS/Windows builds via CI. **0.5** WhatsApp Business; legacy Android schema via compatibility views. **1.0** iOS → Android.
+**0.1 (now)** engine + tests + docs. **0.2** first confirmed real-device migration; fix everything §7 turns up; publish to PyPI. **0.3** quotes/replies (`ZWAMESSAGEINFO` / `ZPARENTMESSAGE`), reactions (`message_add_on_reaction`), edits, group events; `--key-file`; JSON-lines progress output for the GUI. **0.4** ~~Tauri GUI wizard with PyInstaller sidecar~~ (built in 0.2; opens and boots the engine on macOS, first run with phones pending); signed macOS/Windows builds via CI. **0.5** WhatsApp Business; legacy Android schema via compatibility views. **1.0** iOS → Android.
 
 ## 9. References
 

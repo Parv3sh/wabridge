@@ -39,6 +39,6 @@
     ],
     "externalBin": ["binaries/wabridge-engine"],
     "macOS": { "minimumSystemVersion": "12.0" },
-    "linux": { "deb": { "depends": ["android-tools-adb", "usbmuxd"] } }
+    "linux": { "deb": { "depends": ["adb", "usbmuxd"] } }
   }
 }

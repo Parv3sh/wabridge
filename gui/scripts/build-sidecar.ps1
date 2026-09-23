@@ -21,4 +21,15 @@ Remove-Item -Recurse -Force build\pyi, build\sidecar -ErrorAction SilentlyContin
 New-Item -ItemType Directory -Force src-tauri\binaries | Out-Null
 $Out = "src-tauri\binaries\wabridge-engine-$Triple.exe"
 Copy-Item build\sidecar\wabridge.exe $Out -Force
-Write-Host "sidecar → $Out"
+
+Write-Host "→ Smoke test …"
+$Work = Join-Path ([System.IO.Path]::GetTempPath()) ("wabridge-smoke-" + [System.IO.Path]::GetRandomFileName())
+New-Item -ItemType Directory -Force $Work | Out-Null
+$Smoke = "{`"id`":`"1`",`"cmd`":`"ping`"}`n{`"id`":`"2`",`"cmd`":`"shutdown`"}`n" | & $Out serve --work $Work 2>&1 | Out-String
+if ($Smoke -notmatch '"type": "hello"') {
+  Write-Host "   FAILED — the frozen engine did not start:"
+  Write-Host ($Smoke -split "`n" | Select-Object -First 20)
+  exit 1
+}
+Write-Host "   engine answers: ok"
+Write-Host "sidecar → $Out ($([math]::Round((Get-Item $Out).Length / 1MB)) MB)"

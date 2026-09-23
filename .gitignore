@@ -13,3 +13,5 @@ wabridge-work/
 msgstore*.db
 ChatStorage.sqlite*
 tools/
+.omc/
+gui/screenshots/

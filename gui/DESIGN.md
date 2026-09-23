@@ -63,6 +63,14 @@ Principles
 3. Errors say what happened and the exact fix, in the app's voice. No apologies, no vagueness.
 4. Secrets never appear after they are typed; the key field is masked and nothing echoes it.
 5. Motion only for progress fill and the lamp; `prefers-reduced-motion` turns both off.
+6. The forward action is never below the fold. Long screens pin their action row
+   (`.actions-sticky`) to the bottom of the pane, fold instructions the user may not need into a
+   `<details class="steps-disclosure">` (how to get the key, how to install WhatsApp, transfer
+   options), and the content pane shows a real scrollbar. Added after the first screenshot review
+   (23 Sept 2026): at 980 × 660 eight of sixteen screens hid their button.
+7. "Blocked" and "working" look different: a disabled button goes grey (`--rule` fill, rivet
+   text); a busy one keeps its colour and shows the spinner. Sodium marks things that need the
+   user (warn lamps, with an ink ring in light mode); info lamps are harbour.
 
 ## Review against the generated-look defaults
 
@@ -75,4 +83,32 @@ Principles
 * Palette is neither cream + terracotta nor black + acid green; teal + amber is common in
   fintech, but the transit metaphor and the amber-only-for-motion rule make it specific.
 * Copy uses plain verbs that stay the same through the flow: "Decrypt backup", "Copy media",
-  "Back up iPhone", "Convert and restore", "Delete my data".
+  "Back up iPhone", "Move the chats to the iPhone", "Delete my data". Engine log lines
+  ("→ Copying … …") are console voice; the screens show the action's own label and the last log
+  line as a plain aside (`store.tsx` strips the arrow and ellipsis).
+
+## Screenshot review, 23 September 2026
+
+Every screen was rendered for the first time through the browser mock (`npm run screenshots`,
+35 scenes, light and dark, 980 × 660 and 880 × 600) and critiqued by three independent reviewers
+(visual fidelity, UX and copy, layout and accessibility) whose findings a fourth merged and ranked.
+What held up: the rail, the two-surface layout, the berth pattern, notices, the plain-verb buttons,
+the stats row and chat list, the dark-scheme token mapping. What changed as a result:
+
+1. Primary actions were below the fold on eight screens → principle 6 (sticky action rows,
+   disclosures, visible scrollbar) and reordered screens: the key field now comes before the
+   how-to; the Find My warning and its confirmation tick come before the transfer button; the
+   media choice and "Copy media / Skip" come before the chat list (capped at six rows, "Show all").
+2. Disabled buttons were white on pale teal (~2:1) and indistinguishable from busy ones →
+   principle 7. Dark-mode primaries use fog ink on harbour (6.9:1) instead of white (2.5:1).
+3. Engine-voice text leaked into labels ("→ Decrypting msgstore.db.crypt15 …", "Settings → Chats")
+   → stripped in the store; hints use "›"; log lines name things the user knows.
+4. The not-enough-space state was red body text with an enabled "Back up iPhone" → an error
+   notice with "Try anyway", and the primary disabled until space is freed.
+5. Errors that imply damage where none happened: after Apple refuses a restore over Find My,
+   "Put the iPhone back" is no longer offered and the message says nothing changed.
+6. Smaller: info lamps harbour not sodium; warn lamps get an ink ring in light mode; the dark
+   warn wash was olive; disabled choice cards keep their explanation legible; the key field only
+   turns red after blur or submit; input focus rings match buttons; the Done screen no longer
+   prints a raw path (a "Show the folder" button instead) and its delete confirmation states the
+   consequence before the buttons; the "group" tag sits with the count so names align.

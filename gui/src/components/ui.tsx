@@ -129,6 +129,7 @@ export function SecretField({
   invalid,
   autoFocus,
   onSubmit,
+  onBlur,
 }: {
   label: string;
   value: string;
@@ -138,6 +139,7 @@ export function SecretField({
   invalid?: string | null;
   autoFocus?: boolean;
   onSubmit?: () => void;
+  onBlur?: () => void;
 }) {
   const id = useId();
   const [show, setShow] = useState(false);
@@ -153,6 +155,7 @@ export function SecretField({
           type={show ? "text" : "password"}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
           onKeyDown={(e) => {
             if (e.key === "Enter" && onSubmit) onSubmit();
           }}

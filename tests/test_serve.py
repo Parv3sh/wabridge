@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import os
 import shutil
+import sqlite3
 import sys
 import tempfile
 import threading
@@ -18,8 +20,10 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import fixtures  # noqa: E402
 from test_wizard import KEY, FakePhones  # noqa: E402
+
 from wabridge import pipeline, serve  # noqa: E402
 from wabridge.android import adb  # noqa: E402
+from wabridge.ios import backup as iosbackup  # noqa: E402
 from wabridge.ios import device  # noqa: E402
 
 
@@ -220,6 +224,71 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(serve.classify(device.DeviceError("No iPhone found over USB.")).code, "no_iphone")
         self.assertEqual(serve.classify(pipeline.PipelineError("WhatsApp data is not in this backup.")).code,
                          "no_whatsapp_ios")
+
+    def test_rpc_audit_log_never_carries_args(self):
+        """engine.log gets one line per request and per answer (never the args, which may hold secrets)."""
+        with self.assertLogs("wabridge.rpc", level="INFO") as cm:
+            final, _ = self.h.call("ping")
+            self.assertEqual(final["type"], "result")
+            final, _ = self.h.call("android.fetch", key="0" * 64, serial="R5C0")
+            self.assertEqual((final["type"], final["code"]), ("error", "no_android"))   # no phone with that serial
+        text = "\n".join(cm.output)
+        self.assertIn("ping", text)
+        self.assertIn("android.fetch", text)
+        self.assertIn("result", text)
+        self.assertIn("error", text)
+        self.assertNotIn("0" * 64, text)
+        self.assertNotIn("R5C0", text)
+
+    def test_rpc_audit_log_skips_device_polling_and_stays_out_of_gui_console(self):
+        with self.assertLogs("wabridge.rpc", level="INFO") as cm:
+            self.h.call("devices")
+            self.h.call("ping")
+        self.assertFalse(any("devices" in line for line in cm.output), cm.output)
+        # The GUI already sees every protocol event; the audit trail must not be echoed back to it.
+        out = io.StringIO()
+        fwd = serve._LogForwarder(serve.Transport(out))
+        rec = logging.LogRecord("wabridge.rpc", logging.INFO, __file__, 1, "\u2190 1 ping", None, None)
+        fwd.emit(rec)
+        self.assertEqual(out.getvalue(), "")
+
+    def test_unknown_argument_is_bad_args(self):
+        final, _ = self.h.call("ping", bogus=1)
+        self.assertEqual((final["type"], final["code"]), ("error", "bad_args"))
+
+    def test_backup_without_whatsapp_never_becomes_the_pristine_copy(self):
+        """Backing up before WhatsApp exists on the iPhone must not leave a WhatsApp-less pristine copy
+        behind: the retry after installing WhatsApp has to produce a pristine copy convert() can use."""
+        h = self.h
+        self.phones.will_encrypt = False
+        h.call("devices")                                   # FakePhones: first poll is 'unauthorized'
+        final, _ = h.call("android.fetch", key=KEY)
+        self.assertEqual(final["type"], "result", final)
+
+        real_backup = self.phones.backup
+        calls = {"n": 0}
+
+        def backup_without_whatsapp_first(*a, **kw):
+            folder = real_backup(*a, **kw)
+            calls["n"] += 1
+            if calls["n"] == 1:
+                conn = sqlite3.connect(os.path.join(folder, "Manifest.db"))
+                conn.execute("DELETE FROM Files WHERE relativePath LIKE 'ChatStorage.sqlite%'")
+                conn.commit()
+                conn.close()
+            return folder
+
+        pristine_dir = os.path.join(h.engine.work.path("ios_backup_pristine"), "UDID1")
+        with mock.patch.object(device, "backup", backup_without_whatsapp_first):
+            final, _ = h.call("ios.backup", force=True)
+            self.assertEqual((final["type"], final["code"]), ("error", "no_whatsapp_ios"), final)
+            self.assertFalse(os.path.isdir(pristine_dir))
+            final, _ = h.call("ios.backup", force=True)
+            self.assertEqual(final["type"], "result", final)
+        with iosbackup.Backup(final["data"]["pristine"]) as b:
+            self.assertTrue(b.has_whatsapp())
+        final, _ = h.call("convert", media=False)
+        self.assertEqual(final["type"], "result", final)
 
     def test_main_loop_over_pipes(self):
         stdin = io.StringIO('{"id":"a","cmd":"ping"}\nnot json\n{"id":"b","cmd":"shutdown"}\n')

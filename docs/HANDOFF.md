@@ -1,4 +1,4 @@
-# WaBridge — full hand-off (sessions of 22–23 September 2026)
+# WaBridge — full hand-off (sessions of 22–23 September 2026, three sessions)
 
 This is the long-form companion to `../CLAUDE.md`. `CLAUDE.md` is the short operational brief
 that every AI session loads automatically; this file is the complete story for whoever picks the
@@ -94,6 +94,98 @@ the task genuinely requires.
 11. `CLAUDE.md` and this file written; `tools/platform-tools` (adb binaries) had been committed
     by mistake and was untracked; every link now points at `github.com/parvesh-rm/wabridge`.
 
+### Day 3 (23 Sept, evening, Claude Code on the Mac) — first real runs of the desktop app
+
+12. **`bash build-app.sh dev` opens the window and boots the engine.** Proof without a screenshot:
+    the engine's log gets `engine 0.1.0a1 started`, `← 1 state`, `→ 1 result` — the GUI's
+    `refreshState()` after `hello`, which is exactly what flips it to "Engine ready". (The work
+    folder also already held `tools/platform-tools` downloaded at 12:32, so the owner had clicked
+    "Install Android tools" in the app earlier that day.) No screenshot of the real window was
+    possible: from Claude Code inside VS Code, `screencapture` fails ("could not create image from
+    display", Screen Recording permission) and `osascript … System Events` hangs on the Automation
+    prompt. See §9.
+13. **Engine audit trail** (`serve.py`, logger `wabridge.rpc`): one line per request and answer in
+    `engine.log` — command names and error codes only, never args (they carry the key), `devices`
+    polling excluded, not echoed to the GUI console. Two tests; the error line deliberately omits
+    the message because messages can name devices ("Device R5C… not connected").
+14. **Browser mock + screenshot suite**, built because no window capture and no phones were
+    available: `gui/src/engine.ts` now spawns the Tauri sidecar when `__TAURI_INTERNALS__` exists
+    and otherwise (dev builds only) loads `gui/src/dev/mockEngine.ts`, a scripted engine speaking
+    the same protocol from a world chosen by URL flags (`?mock=android,iphone`, `resume-iphone`,
+    `find-my`, `crash`, `speed=0`, …). `gui/scripts/screenshots.mjs` (`npm run screenshots`,
+    Playwright devDependency) drives 35 scenes through headless Chromium into `gui/screenshots/`
+    (git-ignored), with `.full.png` variants for screens taller than the 660 px window. All 35 pass.
+15. **Two frontend bugs found by the suite and fixed.** (a) An engine that exits before `hello`
+    left the app on "Starting the engine…" for the full 30 s timeout; `onClose` now fails the boot
+    immediately with "The engine stopped unexpectedly (exit code N)". (b) Vite HMR remounts
+    `AppProvider`, and every remount spawned a new `wabridge serve` without stopping the old one
+    (three were running at one point); `store.tsx` now stops the engine on unmount.
+16. **Production build works.** `bash build-app.sh`: PyInstaller froze the engine (41.7 MB, the
+    script's smoke test printed `engine answers: ok`; the warn file lists only optional modules),
+    `tauri build` took 2 m 15 s and produced `WaBridge.app` (44 MB, ad-hoc linker-signed) and
+    `WaBridge_0.1.0_aarch64.dmg`; the DMG script ran without an Automation prompt. Opening the
+    `.app` spawned the frozen engine (two processes — PyInstaller `--onefile` bootloader + child)
+    and reached "Engine ready" within 3 s. The standalone frozen binary also answered `state` and
+    `devices` (pymobiledevice3's usbmux path works frozen). Note: `shutdown` right after other
+    requests exits the main loop while their threads are still running, so their results are
+    dropped — the smoke test only relies on `hello`, which is why it passes.
+17. Housekeeping: ruff had six import-order/unused-import errors (CI would have failed); fixed.
+    `.omc/` (a Claude Code plugin's state) and `gui/screenshots/` git-ignored. Versions still
+    differ: `pyproject`/`__version__` say `0.1.0a1`, Tauri/npm/Cargo say `0.1.0` — align before tagging.
+18. **Six-lens code review with adversarial verification** (31 agents: protocol contract,
+    frontend, engine, build/release, docs, privacy; every high/medium finding re-checked by a
+    skeptic). 23 confirmed, 2 refuted, 20 low-severity unverified. Fixed the same evening:
+    - `pipeline.ios_backup` copied the pristine backup *before* checking for WhatsApp, so a backup
+      taken before WhatsApp was installed became the permanent rollback point and every later
+      `convert` failed with the generic code `backup`. Now checks first, replaces an unusable
+      pristine, cleans up a half-copied one, and `classify()` maps the BackupError to
+      `no_whatsapp_ios`. Regression test added.
+    - `android.check` ran `du -sk` over the whole Media tree on every 3 s poll and the GUI
+      discarded in-flight answers, so on a full phone the Android screen could sit on "checking
+      WhatsApp" forever. Engine only measures media once a backup exists; the screen keeps one check
+      in flight and never drops its answer.
+    - An engine crash after boot only reached the console; now it returns to the boot screen with
+      "Try again". A failed initial `state` no longer reports success. `start()`/`stop()` can no
+      longer overlap (an unmount during spawn used to orphan the engine).
+    - "Run the media pass" reopened Transfer with "Chats only" preselected (dead `key` trick).
+    - Disk-space precheck budgets a second full copy where APFS clonefile is unavailable
+      (non-macOS: 2.1×). `serve.main()` closes its log handler (Windows CI could not delete the
+      temp dir). The pymobiledevice3 CLI fallback no longer writes to the protocol pipe and redacts
+      the backup password from its error. `clean` empties `engine.log`. `iphone_dropped` was
+      unreachable behind `locked`. `critical` log records map to `error`.
+    - release.yml: `macos-13` runner is retired → `macos-15-intel`; a manual `workflow_dispatch`
+      would have created a release named `main` → only tags publish. `.deb` depended on the
+      non-existent `android-tools-adb` → `adb`. `build-sidecar.ps1` gained the smoke test.
+      Tauri capability now allows only `serve --work <dir>` instead of any sidecar args.
+    - Docs: USER_GUIDE told users to `pip install wabridge[ios]` (not on PyPI) → clone + `start.sh`;
+      Find My and the media caveat added to guide and README; DESIGN.md's "no network code",
+      `--json`, sidecar name and directory mode statements corrected; macOS 15 removed
+      right-click › Open, so the unsigned-app guidance now says Open Anyway / `xattr`.
+19. **Screenshot design critique** (three lenses + a judge, see `gui/DESIGN.md` → "Screenshot
+    review"). Fifteen ranked items, all implemented: sticky action rows and disclosures so no
+    forward button is below the fold, reordered Android/iPhone/Transfer/Done screens, a "Find My
+    iPhone is off" confirmation before the transfer, legible disabled buttons distinct from busy
+    ones, dark-mode contrast, engine-voice text stripped from labels, and copy fixes throughout.
+    The screenshot scenes were updated to the new copy; 36 scenes pass.
+20. Observed once, not reproduced: a `bash build-app.sh dev` run exited silently (code 0) a few
+    seconds after the engine started, right after the watcher had restarted the app because
+    `dev-sidecar.sh` rewrote the wrapper. The next run stayed up. If it recurs, suspect the
+    src-tauri watcher reacting to the wrapper rewrite; running `sh gui/scripts/dev-sidecar.sh`
+    before `npm run tauri dev` in two steps would separate the two.
+21. **Stale-close race, found by the screenshot suite.** After `stop()` + `start()` on one
+    `EngineClient` (React StrictMode's double mount, Fast Refresh of `store.tsx`), the `close`
+    event of the *old* process arrives asynchronously once the *new* engine is already spawned;
+    the shared `onClose` then failed the new boot ("stopped unexpectedly") and `doStart`'s cleanup
+    killed the new engine — every mock scene after the first showed the boot-error screen, and in
+    the Tauri dev app the engine vanished after a hot reload. Two fixes in `engine.ts`: each spawn
+    is stamped with a generation and close events from earlier generations are ignored; and
+    `stop()` detaches an in-flight `start()` so the next `start()` waits for the stop and spawns
+    afresh instead of joining a boot that is about to be torn down. Production never hit it (one
+    mount, no reload), but `retryBoot` after a crash would have. `engine.log` now also records
+    why an engine stopped ("shutdown requested" vs "stdin closed"); a dev boot reads
+    `started → stopping: shutdown requested → started → ← 1 state` within ~100 ms (StrictMode's
+    mount → unmount → mount), and that is the expected shape.
+
 ## 3. Architecture and the reasoning behind it
 
 - **Python engine, GUI shell on top.** The two hard dependencies — crypt15 knowledge and the iOS
@@ -115,7 +207,8 @@ the task genuinely requires.
 - **Design system** (`gui/DESIGN.md`): harbour-bridge metaphor, fog/deck/steel/rivet palette with
   harbour teal for actions and sodium amber only for motion, Avenir Next on macOS, the
   transit-line rail as the single bold element. Reviewed against the common "generated UI"
-  defaults before coding. It has never been seen rendered — a screenshot-based critique is owed.
+  defaults before coding. First seen rendered on day 3 through the browser mock (§2 item 14); the
+  screenshot-based critique and its outcomes are recorded there and in §7 item 1.
 
 ## 4. Facts learned the hard way
 
@@ -166,9 +259,9 @@ run — fixed, untested).
 | WhatsApp Business | wired (domain + Android root), untested |
 | Legacy (pre-2022) Android schema | unsupported, raises a clear error |
 | Terminal wizard | verified on device end to end |
-| Engine `serve` protocol | 29 offline tests green |
-| Desktop app | compiles on the Mac; window/engine boot unconfirmed; never used with phones |
-| Production build (`bash build-app.sh`, PyInstaller) | never run |
+| Engine `serve` protocol | 33 offline tests green |
+| Desktop app | dev app and built `.app` open and boot the engine (23 Sept); all 35 screens rendered via the browser mock; **never used with phones** |
+| Production build (`bash build-app.sh`, PyInstaller) | **works on macOS arm64** (23 Sept): `WaBridge.app` 44 MB + `.dmg`; frozen engine boots inside the app |
 | Release workflow (tauri-action on `v*` tags) | never run |
 | Windows / Linux | never run anywhere |
 
@@ -197,14 +290,19 @@ before investigating 2–4.
 
 ## 7. Backlog, prioritised, with implementation notes
 
-1. **Confirm the app boots and walk the Android + iPhone steps** with phones plugged in (no
-   restore needed until the Transfer screen). Take screenshots; do a design critique against
-   `gui/DESIGN.md`. Fix whatever the first real run of the UI shows.
-2. **Production build**: `bash build-app.sh` → PyInstaller freeze is the untested piece; the
-   smoke test in `gui/scripts/build-sidecar.sh` must print `"type": "hello"`. Likely fixes are
-   `--hidden-import` entries for pymobiledevice3 submodules. Then tag `v0.2.0` and check the
-   draft release the workflow produces. Unsigned builds: document right-click › Open on macOS;
+1. **Walk the Android + iPhone steps with phones plugged in** (no restore needed until the
+   Transfer screen), in `bash build-app.sh dev` or the built `.app`. Boot is confirmed (day 3) and
+   every screen has been rendered and critiqued from the mock, so what remains is behaviour
+   against real `adb`/usbmux output: device polling cadence, the `android.check` re-ask loop,
+   the encrypted-backup path, the disk-space warning with real numbers. Fix what that shows.
+2. **Release**: the macOS production build works (day 3). Remaining: align the version strings
+   (`0.1.0a1` vs `0.1.0`), tag `v0.2.0` and check the draft release the workflow produces (never
+   run; the Intel leg now targets `macos-15-intel`); Windows/Linux builds (`build-sidecar.ps1`
+   has a smoke test but is unrun). Unsigned builds: macOS users need Open Anyway or `xattr`;
    signing/notarisation later via `bundle.macOS.signingIdentity` and `APPLE_*` secrets.
+   Low-severity leftovers from the day-3 review: `shutdown` is honoured mid-restore when the
+   window closes (consider refusing while a heavy action holds the lock, and a close confirmation);
+   `wadecrypt_fallback` passes the key on the command line; the Windows-only `usbmuxd` story.
 3. **Quoted replies**: Android `message_quoted.key_id` is already parsed into
    `Message.quoted_key_id`. On iOS set `ZWAMESSAGE.ZPARENTMESSAGE` to the Z_PK of the message with
    that `ZSTANZAID` (two-pass write: insert all, then update parents). Verify whether the quote
@@ -249,6 +347,8 @@ before investigating 2–4.
 - Never commit personal data. `wabridge-work/`, `tools/`, `*.crypt15`, `msgstore*.db`,
   `ChatStorage.sqlite*` are git-ignored; the GUI's work folder is under the OS app-data dir.
 - Scripts are invoked with `bash …` / `sh …` in docs so lost executable bits can't bite.
+- After any GUI change run `cd gui && npm run screenshots` and look at the PNGs; keep
+  `gui/src/dev/mockEngine.ts` in step with the protocol (it only needs what the screens read).
 
 ## 9. Environment on the owner's Mac (as of 23 Sept 2026)
 
@@ -259,6 +359,13 @@ migration used `./wabridge-work` (deleted afterwards); the desktop app uses
 `~/Library/Application Support/dev.wabridge.desktop/work`. GitHub remote is
 `https://github.com/parvesh-rm/wabridge.git`; the owner's local git identity is a different
 account, which is fine — attribution is by name in `pyproject.toml`, `LICENSE`, `CITATION.cff`.
+
+Added day 3: PyInstaller is installed in `.venv`; Playwright (devDependency) and its Chromium are
+installed (`npx playwright install chromium`); the built app is at
+`gui/src-tauri/target/release/bundle/macos/WaBridge.app`. Visual Studio Code does **not** have
+Screen Recording or Automation permission, so an unattended session cannot capture the real window
+or drive System Events — grant them in System Settings › Privacy & Security if a real-window
+screenshot is ever needed; until then `npm run screenshots` and `engine.log` are the evidence.
 
 ## 10. Things that went wrong in the process itself (so they aren't repeated)
 
@@ -271,3 +378,7 @@ account, which is fine — attribution is by name in `pyproject.toml`, `LICENSE`
 - Early design assumptions about `ZMESSAGESTATUS`, `ZVCARDSTRING` and plain-text `ZPUSHNAME`
   came from 2018–2022 write-ups and were wrong for current builds. Prefer evidence from the
   target device's own database over documentation — the pristine backup is always available.
+- Day 3: a `sleep`/poll or an `osascript` call is not a way to see the GUI from an unattended
+  session; the audit log and the headless suite are. Vite HMR is not a no-op for a sidecar app:
+  every remount must release the previous process. A boot that only waits for `hello` needs a
+  second exit path for "the process died".

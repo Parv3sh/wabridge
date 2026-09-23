@@ -30,7 +30,8 @@ The official free path, Apple's *Move to iOS*, also works but requires a **facto
 * Python 3.10+
 * [Android platform-tools](https://developer.android.com/tools/releases/platform-tools) (`adb`) on your PATH
 * USB debugging enabled on the Android phone
-* iPhone: WhatsApp installed and activated with the same number; **"Encrypt local backup" turned off**
+* iPhone: WhatsApp installed and activated with the same number; **"Encrypt local backup" turned off**;
+  **Find My iPhone turned off** while restoring (Apple refuses the restore otherwise; turn it back on afterwards)
 * Windows only: iTunes (or Apple Mobile Device Support) for the USB driver. Linux: `usbmuxd`. macOS: nothing extra.
 
 ## Desktop app
@@ -39,7 +40,9 @@ A guided app (Tauri + React shell around the same engine) lives in [`gui/`](gui/
 through the five steps, watches for both phones, shows progress, and only stops when a tap on a
 phone is needed. Build it with `bash build-app.sh` (Rust + Node 20 required) or run it in dev mode
 with `bash build-app.sh dev`; installers for macOS, Windows and Linux are produced by the release
-workflow on every `v*` tag. See [`gui/README.md`](gui/README.md).
+workflow on every `v*` tag. Status: it builds, opens and boots the engine on macOS (23 Sept 2026),
+but has not yet been used with phones — the terminal wizard is the path verified end to end.
+See [`gui/README.md`](gui/README.md).
 
 ## Quick start in the terminal (no setup knowledge needed)
 
@@ -117,7 +120,7 @@ Run the tests: `python -m unittest discover tests` (or `pytest`).
 - [ ] Group event messages (joined/left/subject changed)
 - [ ] WhatsApp Business
 - [ ] Legacy (pre-2022) Android schema
-- [x] Desktop GUI (Tauri shell around this engine) — built, not yet run on hardware
+- [x] Desktop GUI (Tauri shell around this engine) — builds, opens and boots the engine on macOS; not yet run with phones
 - [ ] iOS → Android (the model layer is already direction-agnostic)
 
 ## Prior art and thanks

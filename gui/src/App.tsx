@@ -19,7 +19,8 @@ export default function App() {
 function Router() {
   const { booted, bootError, retryBoot, consoleOpen, setConsoleOpen } = useApp();
   const [step, setStep] = useState<StepId>("start");
-  const [mediaPending, setMediaPending] = useState(false);
+  const [mediaPending, setMediaPending] = useState(false); // media copied but only chats transferred so far
+  const [mediaPass, setMediaPass] = useState(false); // user chose "Run the media pass" on Done
 
   if (bootError) {
     return (
@@ -62,7 +63,8 @@ function Router() {
       {step === "iphone" && <IPhoneStep onNext={() => setStep("transfer")} />}
       {step === "transfer" && (
         <TransferStep
-          key={mediaPending ? "media" : "first"}
+          key={mediaPass ? "media" : "first"}
+          defaultMode={mediaPass ? "media" : "text"}
           onDone={(pending) => {
             setMediaPending(pending);
             setStep("done");
@@ -74,9 +76,13 @@ function Router() {
           mediaPending={mediaPending}
           onMediaPass={() => {
             setMediaPending(false);
+            setMediaPass(true);
             setStep("transfer");
           }}
-          onRestart={() => setStep("start")}
+          onRestart={() => {
+            setMediaPass(false);
+            setStep("start");
+          }}
         />
       )}
     </Shell>

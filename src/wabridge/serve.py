@@ -55,6 +55,11 @@ class RpcError(Exception):
 
 _ctx = threading.local()
 
+# Request/answer audit trail for engine.log: command names and error codes only, never args
+# (they carry the 64-digit key and backup passwords). `devices` polling is left out for readability.
+_rpc_log = logging.getLogger("wabridge.rpc")
+_UNAUDITED = {"devices"}
+
 
 class Transport:
     """Thread-safe JSON-lines writer bound to the real stdout."""
@@ -116,8 +121,11 @@ class _LogForwarder(logging.Handler):
             return
         if record.name.startswith("pymobiledevice3") and record.levelno < logging.WARNING:
             return
+        if record.name == _rpc_log.name:            # the GUI already sees every protocol event
+            return
+        level = "error" if record.levelno >= logging.ERROR else record.levelname.lower()   # GUI knows 4 levels
         self.t.send({"id": getattr(_ctx, "req_id", None), "type": "log",
-                     "level": record.levelname.lower(), "text": text, "logger": record.name})
+                     "level": level, "text": text, "logger": record.name})
 
 
 # ------------------------------------------------------------------------------ error mapping
@@ -130,9 +138,10 @@ def classify(exc: BaseException) -> RpcError:
     if isinstance(exc, crypt15.Crypt15Error):
         if "key must be" in low:
             return RpcError("bad_key", msg, "Paste the 64 digits WhatsApp showed you; spaces are fine.")
-        return RpcError("wrong_key", "The key doesn't decrypt this backup.",
-                        "The backup on the phone was probably written before this key existed. "
-                        "On Android: Settings → Chats → Chat backup → Back up, then try again.")
+        return RpcError("wrong_key", "The key doesn\u2019t open this backup.",
+                        "Either the key was copied wrongly, or the backup on the phone is older than the key. "
+                        "Check the key, or in WhatsApp go to \u22ee \u203a Settings \u203a Chats \u203a Chat backup, "
+                        "tap Back up, wait for it to finish, then try again.")
     if isinstance(exc, adb.AdbError):
         if "unauthorized" in low or "accept the usb debugging" in low:
             return RpcError("unauthorized", msg, "Look at the Android screen and tap Allow.")
@@ -148,19 +157,19 @@ def classify(exc: BaseException) -> RpcError:
     if isinstance(exc, device.DeviceError):
         if "no iphone" in low:
             return RpcError("no_iphone", msg, "Unlock the iPhone, plug it in, tap Trust.")
+        if "dropped the connection" in low:            # before "locked": that message mentions both
+            return RpcError("iphone_dropped", msg, "Unlock the iPhone and try again.")
         if "locked" in low:
             return RpcError("iphone_locked", msg, "Unlock the iPhone and try again.")
         if "trust" in low or "pairing" in low:
             return RpcError("pairing", msg, "Unlock the iPhone and tap 'Trust this computer'.")
         if "encryption is on" in low:
             return RpcError("encrypted_backup", msg, None)
-        if "dropped the connection" in low:
-            return RpcError("iphone_dropped", msg, "Unlock the iPhone and try again.")
         return RpcError("iphone", msg)
     if "mberrordomain/211" in low or "find my" in low:
-        return RpcError("find_my", "Apple refuses to restore while Find My iPhone is on.",
-                        "On the iPhone: Settings → your name → Find My → Find My iPhone → off. "
-                        "Turn it back on afterwards.")
+        return RpcError("find_my", "The iPhone refused the restore because Find My iPhone is on.",
+                        "Nothing on the iPhone has changed. On the iPhone: Settings \u203a your name \u203a Find My "
+                        "\u203a Find My iPhone \u203a off (it asks for your Apple ID password). Then try again.")
     if "mberrordomain/105" in low or "needs more than" in low:
         return RpcError("disk_space", msg, "Free up space on this computer or use an external drive.")
     if isinstance(exc, pipeline.PipelineError):
@@ -173,7 +182,13 @@ def classify(exc: BaseException) -> RpcError:
             return RpcError("bad_args", msg)
         return RpcError("pipeline", msg)
     if isinstance(exc, iosbackup.BackupError):
-        return RpcError("encrypted_backup" if "encrypted" in low else "backup", msg)
+        if "encrypted" in low:
+            return RpcError("encrypted_backup", msg)
+        if "chatstorage.sqlite" in low and "not in backup" in low:
+            return RpcError("no_whatsapp_ios", msg,
+                            "Install WhatsApp on the iPhone, register the same number, send one message, "
+                            "then back the iPhone up again.")
+        return RpcError("backup", msg)
     return RpcError("internal", msg)
 
 
@@ -207,6 +222,8 @@ class Engine:
         if fn is None:
             self.t.send({"id": rid, "type": "error", "code": "unknown_cmd", "message": f"unknown cmd {cmd}"})
             return
+        if cmd not in _UNAUDITED:
+            _rpc_log.info("\u2190 %s %s", rid, cmd)
         threading.Thread(target=self._run, args=(rid, cmd, fn, args), daemon=True).start()
 
     def _run(self, rid: str, cmd: str, fn, args: dict) -> None:
@@ -222,6 +239,8 @@ class Engine:
         try:
             data = fn(rep, **args)
             self.t.send({"id": rid, "type": "result", "data": data if data is not None else {}})
+            if cmd not in _UNAUDITED:
+                _rpc_log.info("\u2192 %s result", rid)
         except TypeError as e:
             if "unexpected keyword" in str(e) or "required positional" in str(e):
                 self.t.send({"id": rid, "type": "error", "code": "bad_args", "message": str(e)})
@@ -243,6 +262,7 @@ class Engine:
         if err.code == "internal":
             payload["trace"] = traceback.format_exc()
         self.t.send(payload)
+        _rpc_log.info("\u2192 %s error %s", rid, err.code)     # code only: messages can name devices
 
     # ---------------------------------------------------------------- cheap queries
     def cmd_ping(self, rep: Reporter) -> dict:
@@ -301,10 +321,13 @@ class Engine:
     def cmd_android_check(self, rep: Reporter, serial: str | None = None) -> dict:
         dev = adb.require_device(serial)
         root = adb.detect_wa_root(dev.serial)
+        has_crypt15 = adb.has_crypt15(root, dev.serial)
+        # `du` over the Media tree takes seconds on a full phone and the GUI re-asks until a backup
+        # appears; only pay for it once there is something to decrypt.
         return {
             "serial": dev.serial, "model": dev.model, "root": root,
-            "has_crypt15": adb.has_crypt15(root, dev.serial),
-            "media_bytes": adb.dir_size_bytes(f"{root}/Media", dev.serial),
+            "has_crypt15": has_crypt15,
+            "media_bytes": adb.dir_size_bytes(f"{root}/Media", dev.serial) if has_crypt15 else None,
         }
 
     # ---------------------------------------------------------------- heavy actions
@@ -323,16 +346,20 @@ class Engine:
             with open(self.work.path("android", "contacts.json"), "w", encoding="utf-8") as fh:
                 json.dump(contacts, fh)
             rep(f"  read {len(contacts)} contact numbers for names")
-        self.work.save(android_pull={"root": root, "media_dir": None, "business": False, "media_pulled": []},
+        media_bytes = adb.dir_size_bytes(f"{root}/Media", dev.serial)
+        self.work.save(android_pull={"root": root, "media_dir": None, "business": False, "media_pulled": [],
+                                     "media_bytes": media_bytes},
                        android_serial=dev.serial)
         summary = self._summary()
-        summary["media_bytes"] = adb.dir_size_bytes(f"{root}/Media", dev.serial)
+        summary["media_bytes"] = media_bytes
         return summary
 
     def cmd_android_inspect(self, rep: Reporter) -> dict:
         if not os.path.isfile(self.work.msgstore_db):
             raise RpcError("pipeline", "No decrypted database yet.")
-        return self._summary()
+        summary = self._summary()
+        summary["media_bytes"] = self.work.state.get("android_pull", {}).get("media_bytes")
+        return summary
 
     def _summary(self) -> dict:
         archive = pipeline.load_archive(self.work)
@@ -378,11 +405,15 @@ class Engine:
             raise RpcError("encrypted_backup", "Backup encryption is on for this iPhone.")
         free = shutil.disk_usage(self.work.root).free
         used = info.disk_used
-        if used and not force and free < used * 1.05:
+        # macOS/APFS clones the pristine copy for free; elsewhere it is a second full copy.
+        factor = 1.05 if sys.platform == "darwin" else 2.1
+        if used and not force and free < used * factor:
             raise RpcError("disk_space",
                            f"The iPhone holds about {used / 1e9:.1f} GB but this computer has only "
-                           f"{free / 1e9:.1f} GB free.",
-                           "Free up space (Trash, Downloads, old backups) or move WaBridge to an external drive.")
+                           f"{free / 1e9:.1f} GB free"
+                           + ("" if factor < 2 else " (the untouched copy needs the same amount again)") + ".",
+                           "Free up space \u2014 empty the Trash, clear Downloads, delete old iPhone backups \u2014 "
+                           "then try again.")
         folder = pipeline.ios_backup(self.work, udid=info.udid, out=rep)
         return {"folder": folder, "pristine": self.work.state.get("ios_backup", {}).get("pristine")}
 
@@ -422,6 +453,13 @@ class Engine:
             p = self.work.path(name)
             if os.path.isfile(p):
                 os.remove(p)
+        # engine.log can carry chat identifiers from library logging; it is held open by our handler
+        # (mode "a", so truncating in place is safe on every platform) — empty it rather than delete it.
+        log_path = self.work.path("engine.log")
+        if os.path.isfile(log_path):
+            with open(log_path, "w", encoding="utf-8"):
+                pass
+            _rpc_log.info("engine.log cleared by `clean`")
         self.work.state = {}
         rep(f"  deleted {freed / 1e9:.1f} GB of migration data")
         return {"freed_bytes": freed}
@@ -497,18 +535,27 @@ def main(work_dir: str, stdin: TextIO | None = None, stdout: TextIO | None = Non
     logging.captureWarnings(True)
 
     engine = Engine(work, transport)
+    _rpc_log.info("engine %s started: pid %s, python %s, %s, work %s",
+                  __version__, os.getpid(), sys.version.split()[0], sys.platform, work.root)
     transport.send({"type": "hello", "version": __version__, "work": work.root, "pid": os.getpid()})
 
-    for line in stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            req = json.loads(line)
-        except json.JSONDecodeError as e:
-            transport.send({"id": None, "type": "error", "code": "bad_json", "message": str(e)})
-            continue
-        engine.handle(req)
-        if engine.stop.is_set():
-            break
+    try:
+        for line in stdin:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                req = json.loads(line)
+            except json.JSONDecodeError as e:
+                transport.send({"id": None, "type": "error", "code": "bad_json", "message": str(e)})
+                continue
+            engine.handle(req)
+            if engine.stop.is_set():
+                break
+    finally:
+        # Why the engine is leaving tells GUI lifecycle problems apart: a `shutdown` request is the app
+        # closing us on purpose; a closed stdin means the window (or its page) went away without one.
+        _rpc_log.info("engine stopping: %s", "shutdown requested" if engine.stop.is_set() else "stdin closed")
+        root.removeHandler(file_handler)
+        file_handler.close()           # lets tests (and Windows) delete the work folder afterwards
     return 0

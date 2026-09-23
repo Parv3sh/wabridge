@@ -18,7 +18,7 @@ jobs:
           - os: macos-latest      # Apple silicon
             triple: aarch64-apple-darwin
             args: --target aarch64-apple-darwin
-          - os: macos-13          # Intel
+          - os: macos-15-intel    # Intel (macos-13 was retired by GitHub in Dec 2025)
             triple: x86_64-apple-darwin
             args: --target x86_64-apple-darwin
           - os: windows-latest
@@ -72,9 +72,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: gui
-          tagName: ${{ github.ref_name }}
-          releaseName: "WaBridge ${{ github.ref_name }}"
-          releaseBody: "Unsigned builds. macOS: right-click the app › Open the first time. See the README for what is verified on real devices."
+          # Only a pushed tag publishes a release; a manual run just builds the installers as artifacts.
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          releaseName: ${{ github.ref_type == 'tag' && format('WaBridge {0}', github.ref_name) || '' }}
+          releaseBody: "Unsigned builds. macOS blocks the first launch: open System Settings › Privacy & Security and click Open Anyway, or run `xattr -dr com.apple.quarantine /Applications/WaBridge.app`. See the README for what is verified on real devices."
           releaseDraft: true
           prerelease: true
           args: ${{ matrix.args }}

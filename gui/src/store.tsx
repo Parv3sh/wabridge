@@ -82,12 +82,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (e.type === "log") {
         pushLine(e.level, e.text);
         if (activityRef.current && e.level !== "debug") {
-          const next = { ...activityRef.current, lastLog: e.text.trim() };
+          // Engine log lines are console-voiced ("→ Copying … …"); the screens show them as plain sentences.
+          const next = { ...activityRef.current, lastLog: e.text.trim().replace(/^[→›»]\s*/, "").replace(/\s*…$/, "") };
           activityRef.current = next;
           setActivity(next);
         }
       } else if (e.type === "error" && e.id === null) {
         pushLine("error", `${e.message}${e.hint ? ` — ${e.hint}` : ""}`);
+        if (e.code === "engine_exit") {
+          // The engine died under us: fall back to the boot screen, whose "Try again" respawns it.
+          setBooted(false);
+          setBootError(new EngineErrorCtor(e.code, e.message, e.hint));
+        }
       } else if (e.type === "hello") {
         pushLine("info", `engine ${e.version} ready, work folder ${e.work}`);
       }
@@ -114,10 +120,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         await client.start();
         if (cancelled) return;
-        await refreshState();
+        const s = await refreshState();
+        if (cancelled) return;
+        if (!s) {
+          throw new EngineErrorCtor("state_failed", "The engine started but did not answer.", "Try again. If it keeps happening, open the console and report what it shows.");
+        }
         setBooted(true);
       } catch (e) {
-        if (!cancelled) setBootError(asEngineError(e));
+        // An engine_exit event may already have set a more specific error; keep it.
+        if (!cancelled) setBootError((prev) => prev ?? asEngineError(e));
       }
     })();
     return () => {
@@ -125,12 +136,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [client, refreshState, bootAttempt]);
 
+  // Stop the engine when the window closes — and when this provider unmounts (Vite HMR in dev),
+  // so a reload never leaves an orphaned `wabridge serve` behind.
   useEffect(() => {
     const onUnload = () => {
       void client.stop();
     };
     window.addEventListener("beforeunload", onUnload);
-    return () => window.removeEventListener("beforeunload", onUnload);
+    return () => {
+      window.removeEventListener("beforeunload", onUnload);
+      void client.stop();
+    };
   }, [client]);
 
   // Device polling: every 3s while a screen asks for it. The engine avoids touching the iPhone

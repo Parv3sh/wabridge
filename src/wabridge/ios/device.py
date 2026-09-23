@@ -160,13 +160,17 @@ def info(udid: str | None = None) -> IDevice:
     return _run(go())
 
 
-def _cli(args: list[str]) -> None:
+def _cli(args: list[str], secret: str | None = None) -> None:
+    """Run the pymobiledevice3 CLI. Its stdout must not reach fd 1: in `serve` mode that pipe carries
+    only protocol JSON, so the CLI's own output goes to stderr. `secret` is redacted from error text."""
     exe = shutil.which("pymobiledevice3") or os.path.join(os.path.dirname(sys.executable), "pymobiledevice3")
     if not os.path.isfile(exe):
         raise DeviceError("pymobiledevice3 CLI not found")
-    r = subprocess.run([exe, *args], text=True)
+    err_stream = sys.__stderr__ if sys.__stderr__ is not None else subprocess.DEVNULL
+    r = subprocess.run([exe, *args], text=True, stdout=err_stream)
     if r.returncode != 0:
-        raise DeviceError(f"pymobiledevice3 {' '.join(args)} failed with code {r.returncode}")
+        shown = " ".join("••••" if secret and a == secret else a for a in args)
+        raise DeviceError(f"pymobiledevice3 {shown} failed with code {r.returncode}")
 
 
 def disable_encryption(backup_dir: str, current_password: str, udid: str | None = None) -> None:
@@ -187,7 +191,7 @@ def disable_encryption(backup_dir: str, current_password: str, udid: str | None 
     try:
         _run(go())
     except TypeError:
-        _cli(["backup2", "encryption", "OFF", current_password, backup_dir])
+        _cli(["backup2", "encryption", "OFF", current_password, backup_dir], secret=current_password)
 
 
 def backup(backup_dir: str, udid: str | None = None, progress: Progress | None = None) -> str:

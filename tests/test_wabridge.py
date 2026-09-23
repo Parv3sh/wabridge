@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 sys.path.insert(0, os.path.dirname(__file__))
 
 import fixtures  # noqa: E402
+
 from wabridge import pipeline  # noqa: E402
 from wabridge.android import crypt15, msgstore  # noqa: E402
 from wabridge.ios import backup as iosbackup  # noqa: E402
@@ -55,6 +56,7 @@ class Crypt15Tests(unittest.TestCase):
     def test_iv_is_found_even_when_a_16_char_string_precedes_it(self):
         """A 16-byte version string in the prefix must not be mistaken for the IV."""
         import zlib
+
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
         root = bytes.fromhex(KEY)
@@ -315,7 +317,6 @@ class BackupTests(unittest.TestCase):
             self.assertIsNotNone(b.get(iosbackup.WA_GROUP_DOMAIN, iosbackup.CHATSTORAGE + "-wal"))
 
     def test_digest_written_for_new_files(self):
-        import hashlib
         media = os.path.join(self.tmp.name, "f.bin")
         with open(media, "wb") as fh:
             fh.write(b"data")

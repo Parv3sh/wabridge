@@ -21,12 +21,16 @@ export function IPhoneStep({ onNext }: { onNext: () => void }) {
   const free = state?.free_bytes ?? 0;
   const used = phone?.disk_used ?? null;
   const notEnough = used !== null && free < used * 1.05;
+  // The generic "no iPhone" message also says "tap Trust"; only a real pairing failure is a warning.
+  const pairingProblem = !connected && !!devices?.iphone_error && /pair/i.test(devices.iphone_error);
 
-  const lamp: LampState = !devices ? "wait" : connected ? (encrypted ? "warn" : "ok") : devices.iphone_error?.toLowerCase().includes("trust") ? "warn" : "wait";
+  const lamp: LampState = !devices ? "wait" : connected ? (encrypted ? "warn" : "ok") : pairingProblem ? "warn" : "wait";
   const title = connected ? phone!.name || "iPhone" : "Waiting for the iPhone";
   const detail = connected
     ? `iOS ${phone!.ios_version}${used !== null ? `, ${formatBytes(used)} in use` : ""}${encrypted ? ", encrypted backups on" : ", ready"}`
-    : devices?.iphone_error ?? "Plug it in, unlock it, and tap Trust if asked";
+    : pairingProblem
+      ? devices!.iphone_error!
+      : "plug it in, unlock it, and tap Trust if asked";
 
   const disable = async () => {
     setErr(null);
@@ -49,6 +53,20 @@ export function IPhoneStep({ onNext }: { onNext: () => void }) {
   };
 
   const busy = !!activity;
+  const backingUp = activity?.cmd === "ios.backup";
+  const needsDecrypt = connected && encrypted;
+
+  const installSteps = [
+    <>
+      Install WhatsApp from the App Store and sign in with the <b>same phone number</b>. WhatsApp on the Android phone will stop working — that is expected; its chats are already safe on this computer. If the iPhone offers to move chats from Android or restore from iCloud, skip it.
+    </>,
+    <>Send one message to anyone, so WhatsApp creates its database.</>,
+  ];
+  const plugStep = (
+    <>
+      Plug the iPhone into this computer, unlock it, and tap <b>Trust</b> if it asks.
+    </>
+  );
 
   return (
     <article className="screen">
@@ -57,34 +75,52 @@ export function IPhoneStep({ onNext }: { onNext: () => void }) {
 
       {!backedUp && (
         <>
-          <p className="lede">WhatsApp has to be installed and signed in on the iPhone before its data can be replaced.</p>
-          <Steps
-            items={[
-              <>
-                Install WhatsApp from the App Store and register with the <b>same phone number</b>. It will say the number is in use elsewhere — that is expected. Skip any iCloud restore.
-              </>,
-              <>Send one message to anyone, so WhatsApp creates its database.</>,
-              <>Plug the iPhone into this computer, unlock it, and tap <b>Trust</b> if it asks.</>,
-            ]}
-          />
-
-          {connected && encrypted && (
-            <Notice tone="warn" title="This iPhone encrypts its backups">
-              <p>WaBridge can only edit an unencrypted backup. Type your backup password and WaBridge turns encryption off (the iPhone may ask for its passcode), or untick “Encrypt local backup” in Finder.</p>
+          {needsDecrypt && (
+            <Notice tone="warn" title="Turn off backup encryption first">
+              <p>This iPhone encrypts its computer backups, and WaBridge can only edit an unencrypted one. Type the backup password and WaBridge switches it off (the iPhone may ask for its passcode). Forgotten it? In Finder select the iPhone and untick “Encrypt local backup”.</p>
               <SecretField label="Backup password" value={password} onChange={setPassword} onSubmit={() => password && !busy && void disable()} />
               <div className="actions actions-tight">
-                <Button kind="secondary" onClick={disable} disabled={!password} busy={activity?.cmd === "ios.disable_encryption"}>
+                <Button kind="primary" onClick={disable} disabled={!password} busy={activity?.cmd === "ios.disable_encryption"}>
                   Turn off backup encryption
                 </Button>
               </div>
             </Notice>
           )}
 
-          {connected && !encrypted && used !== null && (
-            <p className={notEnough ? "warn-text" : undefined}>
+          {connected ? (
+            <>
+              <p className="lede">WhatsApp must be installed and signed in with your number on this iPhone. If it is, back it up now.</p>
+              <details className="steps-disclosure">
+                <summary>WhatsApp not on the iPhone yet? Do this first</summary>
+                <Steps items={installSteps} />
+              </details>
+            </>
+          ) : (
+            <>
+              <p className="lede">WhatsApp has to be installed and signed in on the iPhone before its data can be replaced.</p>
+              <Steps items={[...installSteps, plugStep]} />
+            </>
+          )}
+
+          {connected && !encrypted && used !== null && !notEnough && (
+            <p>
               The backup will need about <b>{formatBytes(used)}</b>; this computer has <b>{formatBytes(free)}</b> free.
-              {notEnough && " Free up space first, or move WaBridge’s data folder to an external drive — the iPhone refuses to back up otherwise."}
             </p>
+          )}
+          {connected && !encrypted && used !== null && notEnough && (
+            <Notice
+              tone="error"
+              title="Not enough space for the backup"
+              actions={
+                <Button kind="quiet" onClick={() => backup(true)} disabled={busy}>
+                  Try anyway
+                </Button>
+              }
+            >
+              <p>
+                The iPhone holds {formatBytes(used)}; this computer has {formatBytes(free)} free. Free up about {formatBytes(used * 1.05 - free)} — empty the Trash, clear Downloads, delete old iPhone backups — and this notice clears by itself.
+              </p>
+            </Notice>
           )}
 
           {err && (
@@ -99,14 +135,23 @@ export function IPhoneStep({ onNext }: { onNext: () => void }) {
               }
             />
           )}
-          {activity?.cmd === "ios.backup" && <ProgressBar pct={activity.pct} label={activity.lastLog.includes("passcode") ? "Enter the passcode on the iPhone" : "Backing up the iPhone"} />}
+          {backingUp && activity && (
+            <>
+              <ProgressBar pct={activity.pct} label={`Backing up the iPhone${used !== null ? ` — about ${formatBytes(used)}` : ""}`} />
+              <p className="aside">If the iPhone asks for its passcode, enter it. Keep it unlocked and plugged in; this is the longest step, often 15–40 minutes.</p>
+            </>
+          )}
 
-          <div className="actions">
-            <Button kind="primary" onClick={() => backup(false)} disabled={!connected || encrypted || busy} busy={activity?.cmd === "ios.backup"}>
-              Back up iPhone
-            </Button>
-          </div>
-          <p className="aside">Keep the iPhone unlocked and plugged in. A copy of this backup is kept untouched so the iPhone can always be put back exactly as it is now.</p>
+          {!needsDecrypt && (
+            <>
+              <p className="aside">Keep the iPhone unlocked and plugged in. A copy of this backup is kept untouched so the iPhone can always be put back exactly as it is now.</p>
+              <div className="actions actions-sticky">
+                <Button kind="primary" onClick={() => backup(false)} disabled={!connected || encrypted || busy || notEnough} busy={backingUp}>
+                  Back up iPhone
+                </Button>
+              </div>
+            </>
+          )}
         </>
       )}
 

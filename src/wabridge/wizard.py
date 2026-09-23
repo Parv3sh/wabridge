@@ -15,7 +15,6 @@ from collections.abc import Callable
 
 from . import pipeline
 from .android import adb, crypt15, msgstore
-from .ios import backup as iosbackup
 from .ios import device
 
 Log = Callable[[str], None]
