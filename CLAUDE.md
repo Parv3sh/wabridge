@@ -66,12 +66,15 @@ NOT verified / open:
   Manifest.db had Mode 0o40755 / ProtectionClass 3; iOS writes 0o40775 / ProtectionClass 0; also
   removed a `Digest` field iOS never writes. Next candidates in DESIGN.md §7 item 1 (ZMETADATA blob,
   thumbnails). Do not claim media works until someone confirms on a device.
-- **Desktop app opens and boots the engine, but has never been used with phones.** Verified
-  2026-09-23 on the owner's Mac: `bash build-app.sh dev` and the production `bash build-app.sh`
-  (PyInstaller freeze → `WaBridge.app` + `WaBridge_0.1.0_aarch64.dmg`, 44 MB, ad-hoc signed) both
-  start, spawn the engine and reach the Start screen (engine.log: `engine … started → ← 1 state →
-  → 1 result`). Every screen was rendered through the browser mock (`npm run screenshots`), not
-  with hardware. Still unrun: Android/iPhone/Transfer steps with phones, release.yml, Windows, Linux.
+- **Desktop app: boots, and the Android + iPhone steps ran with real phones; Transfer not yet.**
+  Verified 2026-09-23 on the owner's Mac: `bash build-app.sh dev` and the production
+  `bash build-app.sh` (PyInstaller freeze → `WaBridge.app` + `WaBridge_0.1.0_aarch64.dmg`, 44 MB,
+  ad-hoc signed) both start, spawn the engine and reach the Start screen (engine.log:
+  `engine … started → ← 1 state → → 1 result`). Every screen was rendered through the browser mock
+  (`npm run screenshots`). With phones the same evening: Android check → decrypt (9 s) and the
+  iPhone backup (~41 GB, passcode prompt shown in the app, pristine copy made) ran through the GUI
+  on the Fold4 and iPhone 13. Still unrun: the Transfer step with phones (a restore — owner's
+  call), release.yml, Windows, Linux.
 - Quotes/replies, reactions, edits, group events (skipped by default), WhatsApp Business (wired,
   untested), legacy pre-2022 Android schema (unsupported), iOS→Android (model layer is ready).
 
@@ -102,6 +105,11 @@ iOS backup / pymobiledevice3:
   `will_encrypt` property. Restore worked with `system=False, source=udid`.
 - Full backup needs roughly the iPhone's used bytes free on the Mac (device error MBErrorDomain/105);
   the engine pre-checks using `com.apple.disk_usage`. Pristine copy uses APFS clone (`cp -c`).
+- The FIRST connect to the `com.apple.mobilebackup2` service on the iPhone 13 (iOS 27.2) fails with
+  "SSL handshake is taking longer than 10 seconds" (pymobiledevice3's limit); the second attempt 1.5 s
+  later succeeds. `device._service` retries once; `serve.py` also keeps the 3 s `devices` poll from
+  overlapping an iPhone action (`iphone_probe` lock). Before both, the GUI's first "Back up iPhone"
+  failed as `iphone_dropped`.
 - Find My iPhone must be off to restore; greyed toggle = Screen Time restriction.
 
 Tauri/GUI gotchas already handled:

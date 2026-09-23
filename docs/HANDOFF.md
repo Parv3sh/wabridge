@@ -172,7 +172,19 @@ the task genuinely requires.
     `dev-sidecar.sh` rewrote the wrapper. The next run stayed up. If it recurs, suspect the
     src-tauri watcher reacting to the wrapper rewrite; running `sh gui/scripts/dev-sidecar.sh`
     before `npm run tauri dev` in two steps would separate the two.
-21. **Stale-close race, found by the screenshot suite.** After `stop()` + `start()` on one
+21. **First run with both phones through the GUI** (owner at the keyboard, engine.log watched from
+    the session). Android: `android.check` 2.5 s, `android.fetch` (pull + decrypt + contacts) 9 s,
+    one LID-only chat warning as on day 1. iPhone: the first "Back up iPhone" failed after 10 s as
+    `iphone_dropped` — pymobiledevice3 aborts the TLS handshake to the backup service after 10 s
+    ("SSL handshake is taking longer than 10 seconds"). Two fixes: `serve.py` serialises the 3 s
+    `devices` probe with iPhone actions (`iphone_probe` lock) and `device._service` retries the
+    connect once after 1.5 s. On the retry run engine.log shows exactly that: first connect fails at
+    +20 s, retry succeeds, the phone's passcode prompt is forwarded as a WARNING (the app shows it
+    under the progress bar), backup of ~41 GB used → 16,889 files finishes 5 m 40 s later, pristine
+    copy present, `state.json` updated. The owner stopped before Transfer (a restore).
+22. The 64-digit key is not recoverable from this Mac (never persisted; work folder deleted on day 1;
+    shell history, Trash, session memory and Claude Code transcripts searched). The owner had it.
+23. **Stale-close race, found by the screenshot suite.** After `stop()` + `start()` on one
     `EngineClient` (React StrictMode's double mount, Fast Refresh of `store.tsx`), the `close`
     event of the *old* process arrives asynchronously once the *new* engine is already spawned;
     the shared `onClose` then failed the new boot ("stopped unexpectedly") and `doStart`'s cleanup
@@ -260,7 +272,7 @@ run — fixed, untested).
 | Legacy (pre-2022) Android schema | unsupported, raises a clear error |
 | Terminal wizard | verified on device end to end |
 | Engine `serve` protocol | 33 offline tests green |
-| Desktop app | dev app and built `.app` open and boot the engine (23 Sept); all 35 screens rendered via the browser mock; **never used with phones** |
+| Desktop app | dev app and built `.app` open and boot the engine (23 Sept); all 36 screens rendered via the browser mock; **Android and iPhone steps run with real phones through the GUI (23 Sept evening)**; Transfer step not run with phones |
 | Production build (`bash build-app.sh`, PyInstaller) | **works on macOS arm64** (23 Sept): `WaBridge.app` 44 MB + `.dmg`; frozen engine boots inside the app |
 | Release workflow (tauri-action on `v*` tags) | never run |
 | Windows / Linux | never run anywhere |
@@ -290,11 +302,11 @@ before investigating 2–4.
 
 ## 7. Backlog, prioritised, with implementation notes
 
-1. **Walk the Android + iPhone steps with phones plugged in** (no restore needed until the
-   Transfer screen), in `bash build-app.sh dev` or the built `.app`. Boot is confirmed (day 3) and
-   every screen has been rendered and critiqued from the mock, so what remains is behaviour
-   against real `adb`/usbmux output: device polling cadence, the `android.check` re-ask loop,
-   the encrypted-backup path, the disk-space warning with real numbers. Fix what that shows.
+1. **Transfer step with phones** — i.e. a chats-only restore through the GUI (the terminal wizard
+   did this successfully on day 1; the GUI path convert → inject → restore → "can you see your
+   chats?" has not). Android and iPhone steps ran with real phones on day 3 (§2 item 22). Still
+   unobserved on hardware: the encrypted-backup (password) path, the disk-space warning with real
+   numbers, `android-unauthorized`, `no_whatsapp`.
 2. **Release**: the macOS production build works (day 3). Remaining: align the version strings
    (`0.1.0a1` vs `0.1.0`), tag `v0.2.0` and check the draft release the workflow produces (never
    run; the Intel leg now targets `macos-15-intel`); Windows/Linux builds (`build-sidecar.ps1`

@@ -200,6 +200,10 @@ class Engine:
         self.t = transport
         self.action_lock = threading.Lock()
         self.ios_busy = threading.Event()
+        # Held while `devices` talks to the iPhone. On a real iPhone 13 (iOS 27.2) the backup service's
+        # TLS handshake ran past pymobiledevice3's 10 s limit when a device poll was still connected, so
+        # an iPhone action first waits for any in-flight probe instead of opening a second session.
+        self.iphone_probe = threading.Lock()
         self.last_iphone: dict | None = None
         self.stop = threading.Event()
         tools = os.path.join(work.root, "tools", "platform-tools")
@@ -236,6 +240,8 @@ class Engine:
             return
         if cmd in IOS_ACTIONS:
             self.ios_busy.set()
+            with self.iphone_probe:          # let a running `devices` probe finish first
+                pass
         try:
             data = fn(rep, **args)
             self.t.send({"id": rid, "type": "result", "data": data if data is not None else {}})
@@ -305,17 +311,18 @@ class Engine:
             out["android"] = [dataclasses.asdict(d) for d in adb.devices()]
         except adb.AdbError as e:
             out["android_error"] = str(e).splitlines()[0]
-        if self.ios_busy.is_set():
-            out["iphone"] = self.last_iphone
-            out["iphone_busy"] = True
-            return out
-        try:
-            info = device.info()
-            self.last_iphone = out["iphone"] = _idevice_dict(info)
-        except device.DeviceError as e:
-            out["iphone_error"] = str(e).splitlines()[0]
-        except Exception as e:  # noqa: BLE001 — pymobiledevice3 internals
-            out["iphone_error"] = (str(e).splitlines() or [type(e).__name__])[0]
+        with self.iphone_probe:
+            if self.ios_busy.is_set():       # re-checked under the lock: an action may have started meanwhile
+                out["iphone"] = self.last_iphone
+                out["iphone_busy"] = True
+                return out
+            try:
+                info = device.info()
+                self.last_iphone = out["iphone"] = _idevice_dict(info)
+            except device.DeviceError as e:
+                out["iphone_error"] = str(e).splitlines()[0]
+            except Exception as e:  # noqa: BLE001 — pymobiledevice3 internals
+                out["iphone_error"] = (str(e).splitlines() or [type(e).__name__])[0]
         return out
 
     def cmd_android_check(self, rep: Reporter, serial: str | None = None) -> dict:

@@ -101,12 +101,25 @@ async def _close(lockdown) -> None:
 async def _service(lockdown):
     from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service  # type: ignore
 
-    svc = Mobilebackup2Service(lockdown)
-    # some releases require an explicit async connect step
-    connect = getattr(svc, "connect", None)
-    if connect and inspect.iscoroutinefunction(connect):
-        await connect()
-    return svc
+    last: Exception | None = None
+    for attempt in range(2):
+        svc = Mobilebackup2Service(lockdown)
+        # some releases require an explicit async connect step
+        connect = getattr(svc, "connect", None)
+        if not (connect and inspect.iscoroutinefunction(connect)):
+            return svc
+        try:
+            await connect()
+            return svc
+        except Exception as e:  # noqa: BLE001 — pymobiledevice3's own hierarchy (ConnectionTerminatedError, …)
+            last = e
+            if attempt == 0:
+                # Verified on iPhone 13 / iOS 27.2 (2026-09-23): the FIRST connect to the backup service fails
+                # with "SSL handshake is taking longer than 10 seconds" (pymobiledevice3's limit) and the
+                # retry 1.5 s later succeeds; the 41 GB backup then ran to completion.
+                await asyncio.sleep(1.5)
+    assert last is not None
+    raise last
 
 
 async def _will_encrypt(svc, lockdown) -> bool:
