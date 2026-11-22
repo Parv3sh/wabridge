@@ -137,7 +137,7 @@ Run the tests: `python -m unittest discover tests` (or `pytest`).
 
 - [x] Engine: decrypt, parse, convert, inject
 - [x] **Text + group chats migrate on real devices** (verified 2026-09-22)
-- [x] **Media files open on the iPhone** — verified 2026-11-22 with WhatsApp Business; regular WhatsApp not yet re-tested (no thumbnails: bubbles show no preview until opened)
+- [x] **Media files open on the iPhone** — verified 2026-11-22 with WhatsApp Business; regular WhatsApp not yet re-tested (previews show in the chat even though we write no `.thumb` file)
 - [ ] Replies/quotes, reactions, edited messages
 - [ ] Group event messages (joined/left/subject changed)
 - [x] WhatsApp Business — CLI (`android pull --business`, then `decrypt`/`ios backup`/`convert`/`inject`/`ios restore`); verified 2026-11-22. Not yet in the wizard or desktop app

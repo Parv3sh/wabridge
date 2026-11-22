@@ -67,7 +67,7 @@ voice note, PDF) open in WhatsApp Business**. Took 6 restores; each failure was 
 
 NOT verified / open:
 - **Media with regular WhatsApp** has not been re-tested since the fixes below (it shares all the code that
-  made WhatsApp Business media open). Bubbles show no thumbnail until opened (we don't write `.thumb`).
+  made WhatsApp Business media open).
 - **Desktop app: boots, and the Android + iPhone steps ran with real phones; Transfer not yet.**
   Verified 2026-09-23 on the owner's Mac: `bash build-app.sh dev` and the production
   `bash build-app.sh` (PyInstaller freeze → `WaBridge.app` + `WaBridge_0.1.0_aarch64.dmg`, 44 MB,
@@ -127,7 +127,7 @@ iOS backup / pymobiledevice3:
     **ZMEDIALOCALPATH is relative to `Message/`** (`Media/<jid>/x/y/<uuid>.ext`) while the file is at
     `Message/Media/…` in the backup; we wrote the full path. Native rows also put the MIME type in ZVCARDSTRING
     (contradicting the older note below) and base64 SHA-256 of the file in ZVCARDNAME; plus ZMEDIAURL/ZMEDIAKEY/
-    ZMETADATA (server-side, not reproducible) and a `.thumb` in ZXMPPTHUMBPATH. Fixed path + MIME + SHA-256;
+    ZMETADATA (server-side, not reproducible) and a `.thumb` in ZXMPPTHUMBPATH (not needed: previews showed without it). Fixed path + MIME + SHA-256;
     The restore with that fix completed, but WhatsApp then crashed on launch ("having trouble reading your chat
     history"): `syslog live -pn WhatsApp` showed SQLite "database disk image is malformed". Cause: a restore
     never deletes files absent from the backup, and inject used to *remove* ChatStorage.sqlite-wal/-shm, so the
@@ -181,5 +181,4 @@ Tauri/GUI gotchas already handled:
 2. README checklist: quotes/replies (`ZPARENTMESSAGE`), reactions (`message_add_on_reaction`), edits,
    group events, WhatsApp Business, legacy schema; PyPI publish.
 3. Media with regular WhatsApp: one end-to-end run to confirm the Business fixes carry over. Then WhatsApp
-   Business in the wizard/desktop app (`business: False` is hard-coded in wizard.py/serve.py), and `.thumb`
-   thumbnails so bubbles show a preview.
+   Business in the wizard/desktop app (`business: False` is hard-coded in wizard.py/serve.py).
