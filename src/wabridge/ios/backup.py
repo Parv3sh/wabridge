@@ -47,6 +47,36 @@ def file_id(domain: str, relative_path: str) -> str:
     return hashlib.sha1(f"{domain}-{relative_path}".encode()).hexdigest()
 
 
+def _clonefile_fn():
+    """libSystem clonefile(2) on macOS, else None."""
+    import sys
+    if sys.platform != "darwin":
+        return None
+    try:
+        import ctypes
+        fn = ctypes.CDLL("/usr/lib/libSystem.dylib", use_errno=True).clonefile
+        fn.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint32]
+        fn.restype = ctypes.c_int
+        return fn
+    except (OSError, AttributeError):
+        return None
+
+
+_CLONEFILE = _clonefile_fn()
+
+
+def copy_blob(src: str, dest: str) -> None:
+    """Copy `src` to `dest`, as an APFS clone when possible (no extra disk space; the two files stay
+    independent, unlike a hard link). Falls back to a plain copy on other filesystems/OSes.
+    Media can be ~10 GB, which otherwise doubles in the work dir."""
+    if _CLONEFILE is not None:
+        if os.path.lexists(dest):
+            os.unlink(dest)
+        if _CLONEFILE(os.fsencode(src), os.fsencode(dest), 0) == 0:
+            return
+    shutil.copyfile(src, dest)
+
+
 @dataclass
 class ManifestEntry:
     file_id: str
@@ -155,11 +185,20 @@ class Backup:
     def _template_blob(self, domain: str, is_dir: bool = False) -> bytes | None:
         """A real row of the same kind (file vs directory) to clone; iOS uses different
         ProtectionClass/Mode for directories (0 / 0o40775) than for files (3 / 0o100644)."""
-        row = self.conn.execute(
-            "SELECT file FROM Files WHERE domain=? AND flags=? AND file IS NOT NULL LIMIT 1",
-            (domain, FLAG_DIR if is_dir else FLAG_FILE),
-        ).fetchone()
-        return row[0] if row else None
+        cache = self.__dict__.setdefault("_templates", {})
+        key = (domain, is_dir)
+        if key not in cache:
+            rows = self.conn.execute(
+                "SELECT relativePath, file FROM Files WHERE domain=? AND flags=? AND file IS NOT NULL",
+                (domain, FLAG_DIR if is_dir else FLAG_FILE),
+            ).fetchall()
+            # Avoid the domain root ('') and any row with ExtendedAttributes: the container root carries
+            # com.apple.containermanager.identity, and cloning it onto 2,000+ media folders made BackupAgent2
+            # abort (NSAssertion in _DLDownloadFileToDevice) on every restore — seen 2026-11-22, iOS 27.2.1,
+            # WhatsApp Business. Plain rows first; fall back to the first row (xattrs get dropped anyway).
+            plain = [f for rel, f in rows if rel and b"ExtendedAttributes" not in f]
+            cache[key] = plain[0] if plain else (rows[0][1] if rows else None)
+        return cache[key]
 
     def _make_blob(self, domain: str, relative_path: str, size: int, *, is_dir: bool,
                    mtime: int | None = None, digest: bytes | None = None) -> bytes:
@@ -170,7 +209,7 @@ class Backup:
         if template:
             try:
                 return _rewrite_mbfile(template, relative_path, size, MODE_DIR if is_dir else MODE_FILE,
-                                       mtime, inode, digest)
+                                       mtime, inode, digest, drop_xattrs=True)
             except Exception:
                 pass
         return build_mbfile(relative_path, size, MODE_DIR if is_dir else MODE_FILE, mtime, inode,
@@ -197,7 +236,7 @@ class Backup:
         self.ensure_dir(domain, relative_path)
         dest = self.blob_path(fid)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
-        shutil.copyfile(local_file, dest)
+        copy_blob(local_file, dest)
         digest = None   # iOS writes no Digest in unencrypted backups; mirror that
         existing = self.get(domain, relative_path)
         if existing and existing.blob:
@@ -255,10 +294,14 @@ def _mbfile_dict(plist: dict) -> dict:
 
 
 def _rewrite_mbfile(blob: bytes, relative_path: str, size: int, mode: int, mtime: int,
-                    inode: int | None, digest: bytes | None) -> bytes:
+                    inode: int | None, digest: bytes | None, *, drop_xattrs: bool = False) -> bytes:
+    """`drop_xattrs` when the template is another path's row: its extended attributes (e.g. a container
+    identity) describe that path, not the new one. The orphaned $objects entry is harmless."""
     plist = plistlib.loads(blob)
     objs = plist["$objects"]
     d = _mbfile_dict(plist)
+    if drop_xattrs:
+        d.pop("ExtendedAttributes", None)
     d["Size"] = size
     d["Mode"] = mode
     d["LastModified"] = mtime

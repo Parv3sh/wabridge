@@ -4,7 +4,7 @@
 
 The paid tools (Dr.Fone, MobileTrans, Mutsapper, Wazzap Migrator…) all do the same thing under the hood: decrypt the Android database, rewrite it into WhatsApp-for-iOS's `ChatStorage.sqlite`, slip it into an iPhone backup and restore that backup. Every one of those steps can be done with open-source software. WaBridge is that pipeline, automated, GPL-licensed, and free forever.
 
-> **Status: alpha — text migration works on real devices; media does not yet.** Tested 2026-09-22 on Samsung Galaxy Z Fold4 (Android) → iPhone 13 (iOS 27.2): all 57,816 messages across 192 chats and groups restored and open correctly in WhatsApp. Media (photos, videos, voice notes) imported as placeholders that didn't open in that test; a likely cause (directory permissions in the backup manifest) has since been fixed in code but **not yet re-tested on a device** — see DESIGN.md §7. If you run the media pass, please report the result in an issue. **Always keep your Android backup.**
+> **Status: alpha — text and media migrate on real devices.** Tested 2026-09-22 on Samsung Galaxy Z Fold4 → iPhone 13 (iOS 27.2), WhatsApp: all 57,816 messages across 192 chats and groups restored and open correctly. Tested 2026-11-22 on a Xiaomi (HyperOS) → iPhone Air (iOS 27.2.1), **WhatsApp Business**: 128,655 messages in 534 chats and 23,974 media files (photos, videos, voice notes, PDFs) restored, and the media **open** in WhatsApp Business. The media fixes that made this work (DESIGN.md §7) apply to regular WhatsApp too, but media there has not been re-tested on a device yet — please report your result in an issue. WhatsApp Business is CLI-only for now (`--business`; the wizard and desktop app handle regular WhatsApp). **Always keep your Android backup.**
 
 ## How it works
 
@@ -137,10 +137,10 @@ Run the tests: `python -m unittest discover tests` (or `pytest`).
 
 - [x] Engine: decrypt, parse, convert, inject
 - [x] **Text + group chats migrate on real devices** (verified 2026-09-22)
-- [ ] **Media files open on the iPhone** — bubbles render but files show as missing; help wanted (DESIGN.md §7 item 1)
+- [x] **Media files open on the iPhone** — verified 2026-11-22 with WhatsApp Business; regular WhatsApp not yet re-tested (no thumbnails: bubbles show no preview until opened)
 - [ ] Replies/quotes, reactions, edited messages
 - [ ] Group event messages (joined/left/subject changed)
-- [ ] WhatsApp Business
+- [x] WhatsApp Business — CLI (`android pull --business`, then `decrypt`/`ios backup`/`convert`/`inject`/`ios restore`); verified 2026-11-22. Not yet in the wizard or desktop app
 - [ ] Legacy (pre-2022) Android schema
 - [x] Desktop GUI (Tauri shell around this engine) — builds, opens and boots the engine on macOS; not yet run with phones
 - [ ] iOS → Android (the model layer is already direction-agnostic)

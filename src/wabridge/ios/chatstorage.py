@@ -26,6 +26,7 @@ from __future__ import annotations
 import functools
 import hashlib
 import logging
+import mimetypes
 import os
 import sqlite3
 from dataclasses import dataclass, field
@@ -67,6 +68,31 @@ class ChatStorageError(Exception):
 
 def to_cocoa(ms: int) -> float:
     return ms / 1000.0 - COCOA_EPOCH_OFFSET
+
+
+def _sha256_b64(path: str) -> str:
+    import base64
+
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return base64.b64encode(h.digest()).decode()
+
+
+def _ascii_filename(name: str) -> str:
+    """ASCII-only file name for the backup. iOS's restore engine derives each fileID from the NFD form of the
+    path, while we hash the NFC form, so a non-ASCII name (e.g. an Arabic PDF title) made BackupAgent2 abort
+    with "Couldn't find file object for temporary restore path" — verified 2026-11-22, iOS 27.2.1. Documents
+    keep their real title in ZTITLE, so nothing visible changes."""
+    import re
+    import unicodedata
+
+    stem, ext = os.path.splitext(name)
+    ascii_stem = unicodedata.normalize("NFKD", stem).encode("ascii", "ignore").decode()
+    ascii_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", ascii_stem).strip("._") or "file"
+    ascii_ext = re.sub(r"[^A-Za-z0-9.]+", "", ext)
+    return ascii_stem + ascii_ext
 
 
 def media_relative_path(chat_jid: str, filename: str) -> str:
@@ -457,9 +483,17 @@ class Writer:
             # Prefix with a short hash of the Android path so `Images/IMG-1.jpg` and
             # `Images/Sent/IMG-1.jpg` in the same chat never overwrite each other.
             tag = hashlib.sha1((m.android_path or local).encode()).hexdigest()[:8]
-            filename = f"{tag}-{os.path.basename(local)}"
+            filename = f"{tag}-{_ascii_filename(os.path.basename(local))}"
             rel = media_relative_path(chat.jid, filename)
-            item["ZMEDIALOCALPATH"] = rel
+            # Verified 2026-11-22 against media WhatsApp Business iOS received natively: the file lives at
+            # Message/Media/<jid>/x/y/<name> in the backup but ZMEDIALOCALPATH is relative to Message/
+            # ("Media/<jid>/x/y/<name>"). Storing the full path made every bubble render but never open.
+            # Native rows also carry the MIME type in ZVCARDSTRING and base64 SHA-256 of the file in ZVCARDNAME.
+            item["ZMEDIALOCALPATH"] = rel[len("Message/"):] if rel.startswith("Message/") else rel
+            mime = m.mime_type or mimetypes.guess_type(local)[0]
+            if mime:
+                item["ZVCARDSTRING"] = mime
+            item["ZVCARDNAME"] = _sha256_b64(local)
             rep.media_jobs.append(MediaJob(local_file=local, relative_path=rel))
             rep.media_linked += 1
         else:

@@ -60,12 +60,14 @@ iOS current build, pymobiledevice3 11.16.3):
   injection, restore (Find My must be OFF; error MBErrorDomain/211 otherwise), **text + group chats
   appear correctly in WhatsApp on the iPhone**.
 
+Verified on real devices, 2026-11-22 (Xiaomi HyperOS → iPhone Air / iPhone18,4, iOS 27.2.1, **WhatsApp
+Business**, CLI path `--business`, pymobiledevice3 from the venv): 128,655 msgs / 534 chats, 23,974 media
+files; after the fixes in "Hard-won facts" the restore completes and **text, groups and media (photo, video,
+voice note, PDF) open in WhatsApp Business**. Took 6 restores; each failure was diagnosed from the phone.
+
 NOT verified / open:
-- **Media (parked by owner — he does not want to run more restores for now).** Media bubbles render
-  but files don't open. Most likely cause fixed in code but untested: injected *directory* rows in
-  Manifest.db had Mode 0o40755 / ProtectionClass 3; iOS writes 0o40775 / ProtectionClass 0; also
-  removed a `Digest` field iOS never writes. Next candidates in DESIGN.md §7 item 1 (ZMETADATA blob,
-  thumbnails). Do not claim media works until someone confirms on a device.
+- **Media with regular WhatsApp** has not been re-tested since the fixes below (it shares all the code that
+  made WhatsApp Business media open). Bubbles show no thumbnail until opened (we don't write `.thumb`).
 - **Desktop app: boots, and the Android + iPhone steps ran with real phones; Transfer not yet.**
   Verified 2026-09-23 on the owner's Mac: `bash build-app.sh dev` and the production
   `bash build-app.sh` (PyInstaller freeze → `WaBridge.app` + `WaBridge_0.1.0_aarch64.dmg`, 44 MB,
@@ -75,8 +77,8 @@ NOT verified / open:
   iPhone backup (~41 GB, passcode prompt shown in the app, pristine copy made) ran through the GUI
   on the Fold4 and iPhone 13. Still unrun: the Transfer step with phones (a restore — owner's
   call), release.yml, Windows, Linux.
-- Quotes/replies, reactions, edits, group events (skipped by default), WhatsApp Business (wired,
-  untested), legacy pre-2022 Android schema (unsupported), iOS→Android (model layer is ready).
+- Quotes/replies, reactions, edits, group events (skipped by default), WhatsApp Business in the
+  wizard/desktop app (CLI only), legacy pre-2022 Android schema (unsupported), iOS→Android (model layer is ready).
 
 ## Hard-won facts (do not rediscover)
 
@@ -89,7 +91,9 @@ WhatsApp iOS ChatStorage (2025/26 builds):
   these from existing rows (`Writer._learn_conventions`, `_never_null_numeric`).
 - 1:1 sessions are keyed by `<n>@lid` in ZCONTACTJID with the phone JID in ZCONTACTIDENTIFIER
   (ZFLAGS 272, ZSPOTLIGHTSTATUS −5); groups ZFLAGS 256, ZSPOTLIGHTSTATUS 1. ZWACHATPROPERTIES unused.
-- MIME type does NOT go in ZVCARDSTRING (that's for real vCards). ZMEDIASECTIONID = "YYYY-MM".
+- Media rows: native WhatsApp Business (iOS, 2026-11-22) puts the MIME type in ZVCARDSTRING and the file's
+  base64 SHA-256 in ZVCARDNAME (older note said MIME must not go there — superseded by that diff); vCard
+  messages use the same columns for the card. ZMEDIASECTIONID = "YYYY-MM".
 - Z_ENT comes from Z_PRIMARYKEY by name; bump Z_MAX after inserts; convert always starts from the
   pristine ChatStorage so re-runs (e.g. media pass) rebuild rather than dedupe.
 
@@ -111,6 +115,29 @@ iOS backup / pymobiledevice3:
   overlapping an iPhone action (`iphone_probe` lock). Before both, the GUI's first "Back up iPhone"
   failed as `iphone_dropped`.
 - Find My iPhone must be off to restore; greyed toggle = Screen Time restriction.
+- Restore failures show up on the Mac only as "iPhone dropped the connection" at 0 %, ~2 min in. The real error
+  is on the phone: `pymobiledevice3 crash ls` (BackupAgent2-*.ips) and `pymobiledevice3 syslog live -pn
+  BackupAgent2` during the restore. Found this way (2026-11-22, iPhone18,4, iOS 27.2.1, WhatsApp Business):
+  - iOS derives fileIDs from the **NFD** form of the path; a non-ASCII media name hashed as NFC aborted the
+    restore ("Couldn't find file object for temporary restore path"). Media names are now ASCII (`_ascii_filename`).
+  - The directory template was the container root, whose `com.apple.containermanager.identity` xattr got cloned
+    onto every new folder. Templates now skip root/xattr rows and new rows drop ExtendedAttributes.
+  - With both fixes the restore completed (77,677 files) and **Business text + groups appeared**; media bubbles
+    still didn't open. Diff against natively received photo/PDF/voice note (same day) found why:
+    **ZMEDIALOCALPATH is relative to `Message/`** (`Media/<jid>/x/y/<uuid>.ext`) while the file is at
+    `Message/Media/…` in the backup; we wrote the full path. Native rows also put the MIME type in ZVCARDSTRING
+    (contradicting the older note below) and base64 SHA-256 of the file in ZVCARDNAME; plus ZMEDIAURL/ZMEDIAKEY/
+    ZMETADATA (server-side, not reproducible) and a `.thumb` in ZXMPPTHUMBPATH. Fixed path + MIME + SHA-256;
+    The restore with that fix completed, but WhatsApp then crashed on launch ("having trouble reading your chat
+    history"): `syslog live -pn WhatsApp` showed SQLite "database disk image is malformed". Cause: a restore
+    never deletes files absent from the backup, and inject used to *remove* ChatStorage.sqlite-wal/-shm, so the
+    phone's own WAL (hours of use since the previous restore) was replayed onto our new DB. inject now ships
+    zero-byte -wal/-shm. With this fix the 6th restore worked: WhatsApp Business opened, media open.
+  - A full backup after a restore re-sends everything (~42 GB), not an increment. On an exFAT disk
+    pymobiledevice3 crashes at the end on macOS `._*` AppleDouble files (Manifest.db is written, Status stays
+    "removing") — fine for analysis, not for restoring.
+- `wabridge-work` reuse: re-inject only into a fresh `cp -c -R` of the pristine backup — `ensure_dir` skips rows
+  that already exist, so injecting twice keeps the old (bad) rows.
 
 Tauri/GUI gotchas already handled:
 - Sidecar is named `wabridge-engine` — it must differ from productName `WaBridge` or the bundler
@@ -153,5 +180,6 @@ Tauri/GUI gotchas already handled:
    Then tag `v0.2.0` and check what release.yml produces (never run).
 2. README checklist: quotes/replies (`ZPARENTMESSAGE`), reactions (`message_add_on_reaction`), edits,
    group events, WhatsApp Business, legacy schema; PyPI publish.
-3. Media, only when the owner is willing to restore again: receive one photo natively on the iPhone,
-   take a backup, diff that ZWAMEDIAITEM row + its Manifest.db entry against ours.
+3. Media with regular WhatsApp: one end-to-end run to confirm the Business fixes carry over. Then WhatsApp
+   Business in the wizard/desktop app (`business: False` is hard-coded in wizard.py/serve.py), and `.thumb`
+   thumbnails so bubbles show a preview.
