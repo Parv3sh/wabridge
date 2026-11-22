@@ -187,10 +187,15 @@ class ChatStorageWriterTests(unittest.TestCase):
         mi = conn.execute("SELECT * FROM ZWAMEDIAITEM WHERE Z_PK=?", (img["ZMEDIAITEM"],)).fetchone()
         self.assertEqual(mi["ZMESSAGE"], img["Z_PK"])
         self.assertEqual(mi["ZTITLE"], "look at this")
-        self.assertIsNone(mi["ZVCARDSTRING"])          # MIME must NOT go in the vCard column
+        # Native WhatsApp Business rows (iOS 27.2.1, 2026-11-22): MIME in ZVCARDSTRING, base64 SHA-256 of the
+        # file in ZVCARDNAME, ZMEDIALOCALPATH relative to Message/ (the file itself sits under Message/Media/).
+        self.assertEqual(mi["ZVCARDSTRING"], "image/jpeg")
+        self.assertEqual(len(mi["ZVCARDNAME"]), 44)
         self.assertEqual(img["ZMEDIASECTIONID"], "2024-09")
         self.assertTrue(mi["ZMEDIALOCALPATH"].endswith("-IMG-001.jpg"))
-        self.assertTrue(mi["ZMEDIALOCALPATH"].startswith(f"Message/Media/{fixtures.ALICE}/"))
+        self.assertTrue(mi["ZMEDIALOCALPATH"].startswith(f"Media/{fixtures.ALICE}/"))
+        job = next(j for j in rep.media_jobs if j.relative_path.endswith("-IMG-001.jpg"))
+        self.assertEqual(job.relative_path, "Message/" + mi["ZMEDIALOCALPATH"])
         voice = conn.execute("SELECT ZMESSAGETYPE FROM ZWAMESSAGE WHERE ZSTANZAID='K103'").fetchone()[0]
         self.assertEqual(voice, 3)
         doc = conn.execute(
@@ -245,6 +250,28 @@ class ChatStorageWriterTests(unittest.TestCase):
         w2.finalize()
         self.assertEqual(rep2.messages_written, 0)
         self.assertEqual(rep2.sessions_created, 0)
+
+
+class RestoreSafetyTests(unittest.TestCase):
+    """Regressions from the first WhatsApp Business restore (2026-11-22, iOS 27.2.1): BackupAgent2 aborted."""
+
+    def test_media_file_names_are_ascii(self):
+        name = chatstorage._ascii_filename("ملف تجريبي .pdf")
+        self.assertTrue(name.isascii())
+        self.assertTrue(name.endswith(".pdf"))
+        self.assertEqual(chatstorage._ascii_filename("Café déjà vu.jpg"), "Cafe_deja_vu.jpg")
+        self.assertEqual(chatstorage._ascii_filename("IMG-20200422-WA0000.jpg"), "IMG-20200422-WA0000.jpg")
+
+    def test_new_rows_do_not_inherit_extended_attributes(self):
+        import plistlib
+        blob = iosbackup.build_mbfile("", 0, 0o40755, 1, 1, protection_class=0)
+        p = plistlib.loads(blob)
+        p["$objects"].append(b"container identity")
+        iosbackup._mbfile_dict(p)["ExtendedAttributes"] = plistlib.UID(len(p["$objects"]) - 1)
+        out = iosbackup._rewrite_mbfile(plistlib.dumps(p, fmt=plistlib.FMT_BINARY), "Message/Media/x", 0,
+                                        0o40775, 2, 2, None, drop_xattrs=True)
+        self.assertNotIn("ExtendedAttributes", iosbackup.read_mbfile(out))
+        self.assertEqual(iosbackup.read_mbfile(out)["RelativePath"], "Message/Media/x")
 
 
 class BackupTests(unittest.TestCase):
@@ -370,7 +397,12 @@ class PipelineOfflineTests(unittest.TestCase):
                 self.assertEqual(len(files), 4)
                 for e in files:
                     self.assertTrue(os.path.isfile(b.blob_path(e.file_id)))
-                self.assertIsNone(b.get(iosbackup.WA_GROUP_DOMAIN, "ChatStorage.sqlite-wal"))
+                # -wal/-shm ship as EMPTY files so the restore overwrites the phone's stale journal
+                for suffix in ("-wal", "-shm"):
+                    e = b.get(iosbackup.WA_GROUP_DOMAIN, "ChatStorage.sqlite" + suffix)
+                    self.assertIsNotNone(e)
+                    self.assertEqual(os.path.getsize(b.blob_path(e.file_id)), 0)
+                    self.assertEqual(iosbackup.read_mbfile(e.blob)["Size"], 0)
                 # the injected ChatStorage is the converted one
                 cs_entry = b.get(iosbackup.WA_GROUP_DOMAIN, iosbackup.CHATSTORAGE)
                 conn = sqlite3.connect(b.blob_path(cs_entry.file_id))

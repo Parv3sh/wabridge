@@ -26,6 +26,14 @@ WA_BUSINESS_MEDIA_ROOT = "/sdcard/Android/media/com.whatsapp.w4b/WhatsApp Busine
 
 # Sub-folders of WhatsApp/Media we migrate. Order = priority when disk space is limited.
 MEDIA_DIRS = [
+    "WhatsApp Business Images",
+    "WhatsApp Business Video",
+    "WhatsApp Business Voice Notes",
+    "WhatsApp Business Audio",
+    "WhatsApp Business Documents",
+    "WhatsApp Business Animated Gifs",
+    "WhatsApp Business Stickers",
+    "WhatsApp Business Video Notes",
     "WhatsApp Images",
     "WhatsApp Video",
     "WhatsApp Voice Notes",

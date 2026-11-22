@@ -292,8 +292,15 @@ def inject(work: Work, *, backup_folder: str | None = None, out: Log = print) ->
     out("→ Adding the chats (and any media) to the iPhone backup …")
     with iosbackup.Backup(folder) as b:     # rolls back Manifest.db if anything below raises
         b.put(domain, iosbackup.CHATSTORAGE, db)
+        # Ship EMPTY -wal/-shm rather than dropping them: a restore never deletes files that are missing from the
+        # backup, so the phone's own WAL (from WhatsApp running since the last restore) survived and SQLite
+        # replayed it onto our new database → "database disk image is malformed" and the "having trouble
+        # reading your chat history" screen. Seen 2026-11-22 on the second restore of the same phone.
+        # A zero-byte WAL means "no WAL" to SQLite; a zero-byte -shm is rebuilt on open.
+        empty = work.path("convert", "empty")
+        open(empty, "wb").close()
         for suffix in ("-wal", "-shm"):
-            b.remove(domain, iosbackup.CHATSTORAGE + suffix)
+            b.put(domain, iosbackup.CHATSTORAGE + suffix, empty)
         jobs = report.get("media_jobs", [])
         prog = progress_callback(out, "inject")
         for i, job in enumerate(jobs, 1):
